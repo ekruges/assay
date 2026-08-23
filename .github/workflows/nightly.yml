@@ -1,0 +1,91 @@
+name: Nightly backend
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+      timezone: "America/New_York"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: assay-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Restore market history
+        uses: actions/cache@v4
+        with:
+          path: .cache/market
+          key: assay-market-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            assay-market-${{ runner.os }}-
+
+      - name: Test
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run check
+          npm --prefix frontend run test:unit
+          python3 -m unittest discover -s tests
+          python3 -m compileall -q assay tests
+          node --test tests/test_quote.mjs
+          bash -n scripts/nightly.sh
+
+      - name: Restore append-only forecast log
+        run: |
+          mkdir -p .state
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git fetch --depth=1 origin data
+            git show FETCH_HEAD:forecast_log.jsonl > .state/forecast_log.jsonl || true
+          fi
+
+      - name: Build and verify every ticker
+        env:
+          ASSAY_SEC_USER_AGENT: ${{ secrets.ASSAY_SEC_USER_AGENT }}
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+          ASSAY_FORECAST_LOG: ${{ github.workspace }}/.state/forecast_log.jsonl
+        run: scripts/nightly.sh
+
+      - name: Verify frontend contract and production bundle
+        run: |
+          npm --prefix frontend run test:contract
+          npm --prefix frontend run build
+
+      - name: Publish generated data outside main history
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          publish_dir=$(mktemp -d)
+          cp -R data/. "$publish_dir/"
+          cp run-summary.json verification-summary.json \
+            forecast-settlement-summary.json "$publish_dir/"
+          if [ -f .state/forecast_log.jsonl ]; then
+            cp .state/forecast_log.jsonl "$publish_dir/forecast_log.jsonl"
+          fi
+          git -C "$publish_dir" init
+          git -C "$publish_dir" checkout --orphan data
+          git -C "$publish_dir" config user.name github-actions
+          git -C "$publish_dir" config user.email github-actions@github.com
+          git -C "$publish_dir" add --all
+          git -C "$publish_dir" commit -m "assay data $(date -u +%F)"
+          git -C "$publish_dir" push --force \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:data

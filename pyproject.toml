@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "assay"
+version = "0.1.0"
+description = "Evidence-linked financial condition research from SEC filings"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+assay = "assay.cli:main"
+assay-forecast = "assay.forecast:main"
+
+[tool.setuptools.package-data]
+assay = ["reference_data/*.json"]
+
+[tool.setuptools.packages.find]
+include = ["assay*"]
