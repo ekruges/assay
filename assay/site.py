@@ -258,7 +258,18 @@ def sector_page(state: dict[str, Any], sector: str, page_link: str = "./") -> st
     rows = sorted((r for r in state["graded"] if (r.get("sector") or "other") == sector), key=lambda r: r["percentile"])
     mcap, history = state["mcap"], state["history"]
     label = SECTOR_LABELS.get(sector, sector)
-    out = [heading(label), hero(f"sector-{sector}", label), f'<p>{len(rows):,} graded companies. Letters are fifths of this list; lower percentile is stronger.</p>']
+    out = [heading(label), hero(f"sector-{sector}", label)]
+    groups = {r.get("peer_group") for r in rows if r.get("peer_group")}
+    pooled = {g for g in groups if g != sector}
+    if pooled:
+        group = sorted(pooled)[0]
+        members = [r for r in state["graded"] if r.get("peer_group") == group]
+        others = sorted({SECTOR_LABELS.get(r.get("sector") or "other", r.get("sector") or "other") for r in members if (r.get("sector") or "other") != sector})
+        out.append(f'<p>{len(rows):,} graded companies, fewer than the 100 a peer group needs, so their letters were computed in the pooled group '
+                   f'<b>{escape(group.replace("_", " "))}</b>: {len(members):,} companies from {escape(label)} and {escape(", ".join(others))}. '
+                   'Letters are fifths of that pooled list, not of this page. Lower percentile is stronger.</p>')
+    else:
+        out.append(f'<p>{len(rows):,} graded companies. Letters are fifths of this list; lower percentile is stronger.</p>')
     scored = [r for r in rows if isinstance(r.get("composite"), (int, float))]
     largest = sorted((r for r in scored if mcap.get(r["ticker"])), key=lambda r: -mcap[r["ticker"]])[:6]
     named = [(r["ticker"], r["composite"], home._flags(r) or r["ticker"]) for r in largest]
@@ -499,7 +510,8 @@ def sectors_page(state: dict[str, Any], hist: dict[str, dict[str, dict[str, Any]
     for r in state["graded"]:
         by_sector.setdefault(r.get("sector") or "other", []).append(r)
     ordered = sorted(by_sector.items(), key=lambda kv: -len(kv[1]))
-    out.append(f"<p>{len(by_sector)} sectors from the four-digit SIC code, {len(state['graded']):,} graded companies. Each letter is one fifth of its sector, so the sectors differ in who holds the letters, in size, and in how their prices moved.</p>")
+    out.append(f"<p>{len(by_sector)} sectors from the four-digit SIC code, {len(state['graded']):,} graded companies. Each letter is one fifth of its peer group, so the sectors differ in who holds the letters, in size, and in how their prices moved. "
+               "A sector with fewer than 100 graded companies is graded in a pooled group with its neighbor, and its page says so.</p>")
     moms = []
     for sector, rs in ordered:
         ms = [m for m in (home._momentum(r) for r in rs) if m is not None]
@@ -509,7 +521,7 @@ def sectors_page(state: dict[str, Any], hist: dict[str, dict[str, dict[str, Any]
     rows = []
     for sector, rs in ordered:
         counts = {g: sum(1 for r in rs if r["grade"][0] == g) for g in "ABCDE"}
-        best = min(rs, key=lambda r: r.get("percentile") or 1)
+        best = home.best_ranked(rs) or rs[0]
         thumb = animals.photo(f"sector-{sector}", 240)
         pic = f'<a href="{page_link}sector-{escape(sector)}.html"><img src="{thumb}" alt="" style="width:72px;height:48px;object-fit:cover;border:1px solid #000080;vertical-align:middle"></a>' if thumb else ""
         big = sum(1 for r in rs if state["mcap"].get(r["ticker"], 0) >= 1e10)

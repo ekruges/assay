@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from assay import animals
-from assay.home import featured, load, movers, render
+from assay.home import best_ranked, featured, load, movers, render
 from assay.market_data import MarketStore
 from assay.pipeline import run_full_pipeline
 from assay.sec import BulkSecStore
@@ -38,6 +38,11 @@ class HomeTests(unittest.TestCase):
         self.assertEqual(html.count("data:image/jpeg;base64,"), 5, "one embedded photo per letter in the legend")
         self.assertIn("Photographs from Wikimedia Commons", html)
         self.assertTrue({"bull", "bear", "elk", "tortoise", "sloth", "fox"} <= {c["name"] for c in animals.credits()})
+
+    def test_best_ranked_treats_a_zero_percentile_as_the_strongest(self) -> None:
+        rows = [{"ticker": "GNE", "percentile": 0.012}, {"ticker": "CWCO", "percentile": 0.0}, {"ticker": "NONE", "percentile": None}]
+        self.assertEqual(best_ranked(rows)["ticker"], "CWCO")
+        self.assertIsNone(best_ranked([{"ticker": "NONE", "percentile": None}]))
 
     def test_movers_count_only_letter_changes_within_the_year(self) -> None:
         rows = [{"ticker": "OLD", "grade": "E", "percentile": 0.9}, {"ticker": "NEW", "grade": "E", "percentile": 0.9}]

@@ -96,6 +96,12 @@ def year_before(as_of: str) -> str:
     return (date.fromisoformat(as_of) - timedelta(days=365)).isoformat()
 
 
+def best_ranked(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The row with the lowest percentile; a percentile of exactly zero is the strongest, not a missing value."""
+    ranked = [r for r in rows if isinstance(r.get("percentile"), (int, float))]
+    return min(ranked, key=lambda r: r["percentile"]) if ranked else None
+
+
 def movers(state: dict[str, Any], min_equity: float = 5e8) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Companies whose letter changed over the year to the latest rescan, ranked by percentile move."""
     history = state["history"]
@@ -133,7 +139,7 @@ def featured(state: dict[str, Any]) -> list[str]:
     by_sector: dict[str, dict[str, Any]] = {}
     for r in state["graded"]:
         best = by_sector.get(r.get("sector"))
-        if best is None or (r.get("percentile") or 1) < (best.get("percentile") or 1):
+        if isinstance(r.get("percentile"), (int, float)) and (best is None or r["percentile"] < best["percentile"]):
             by_sector[r.get("sector")] = r
     tickers += [r["ticker"] for r in by_sector.values()]
     return list(dict.fromkeys(tickers))
@@ -237,7 +243,7 @@ def render(state: dict[str, Any], page_link: str = "./") -> str:
     rows = ""
     for sector, rs in sorted(by_sector.items(), key=lambda kv: -len(kv[1])):
         moms = [m for m in (_momentum(r) for r in rs) if m is not None]
-        best = min(rs, key=lambda r: r.get("percentile") or 1)
+        best = best_ranked(rs) or rs[0]
         rows += (f'<tr><td>{escape(sector.replace("_", " "))}</td><td class="n">{len(rs)}</td><td class="n">{statistics.median(moms) * 100:+.0f}%</td>'
                  f'<td>{_company_cell(best, mcap.get(best["ticker"]), sd, page_link)}</td></tr>')
     out.append(f'<div class="scroll peers"><table class="data"><tr><th>Sector</th><th class="n">Graded</th><th class="n">Median 12-1</th><th>Best ranked</th></tr>{rows}</table></div>')

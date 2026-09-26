@@ -1705,16 +1705,15 @@ class SecClientTests(unittest.TestCase):
 
 
 class NightlyWorkflowTests(unittest.TestCase):
-    def test_nightly_schedule_is_timezone_aware_and_never_publishes_to_main(self) -> None:
-        workflow = (
-            Path(__file__).parents[1] / ".github" / "workflows" / "nightly.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn('cron: "0 3 * * *"', workflow)
-        self.assertIn('timezone: "America/New_York"', workflow)
-        self.assertIn("scripts/nightly.sh", workflow)
-        self.assertIn("HEAD:data", workflow)
-        self.assertNotIn("HEAD:main", workflow)
-
+    def test_nightly_scripts_publish_only_through_the_wrapper(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        nightly = (root / "scripts" / "nightly.sh").read_text(encoding="utf-8")
+        wrapper = (root / "scripts" / "homelab-nightly.sh").read_text(encoding="utf-8")
+        self.assertNotIn("git ", nightly, "the run never touches a repository")
+        self.assertIn("--verify-output data", nightly, "the tree is verified before the site is built")
+        self.assertIn("--snapshot", nightly, "every run records its rescan")
+        self.assertIn("$target.new", wrapper, "the site is uploaded beside the live tree and swapped whole")
+        self.assertIn("--failed", wrapper, "a run that did not complete is still recorded")
 
 class UniverseTests(unittest.TestCase):
     def test_ticker_file_is_deduplicated_and_sorted(self) -> None:
