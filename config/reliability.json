@@ -1,0 +1,26 @@
+{
+  "source": "reliability study of the per-band refit on EDGAR filings; fit 2012-2019, test 2020-2025",
+  "model": "11 accounting level inputs plus loss and burn thresholds, fit separately within asset quintile, L2 penalty selected per stratum by 5-fold CIK-grouped cross-validation on the training window",
+  "outcome": "8-K Item 1.03 within 365 days, with the directional acquisition rule",
+  "fit_window": "filings 2012-01-01 to 2019-12-31",
+  "test_window": "filings 2020-01-01 to 2025-12-31",
+  "status": "post_hoc_pending_confirmation",
+  "confirmation": "pre-registered on 2026 filings once their 12-month outcome windows close; supported if the paired per-quintile gain over the pooled model has a lower bound above 0.05",
+  "base_rate_window": "annualized 12-month Item 1.03 frequency, filings 2012-01-01 to 2025-12-31",
+  "size_instrument": "total assets (us-gaap:Assets), quintile cut points fixed on the training window",
+  "all": {"auc": 0.8767, "ci": [0.858, 0.8947], "test_events": 691},
+  "strata": [
+    {"id": "Q1", "label": "under $12.5M assets", "assets_max": 12500000, "auc": 0.7605, "ci": [0.6477, 0.8628], "test_events": 63, "base_rate_annual": 0.00604},
+    {"id": "Q2", "label": "$12.5M to $120M assets", "assets_min": 12500000, "assets_max": 120000000, "auc": 0.8274, "ci": [0.7875, 0.8621], "test_events": 201, "base_rate_annual": 0.01072},
+    {"id": "Q3", "label": "$120M to $591M assets", "assets_min": 120000000, "assets_max": 591000000, "auc": 0.8662, "ci": [0.8308, 0.8968], "test_events": 206, "base_rate_annual": 0.01026},
+    {"id": "Q4", "label": "$591M to $2.67B assets", "assets_min": 591000000, "assets_max": 2670000000, "auc": 0.9116, "ci": [0.8763, 0.9415], "test_events": 160, "base_rate_annual": 0.01011},
+    {"id": "Q5", "label": "over $2.67B assets", "assets_min": 2670000000, "auc": 0.9358, "ci": [0.8822, 0.9673], "test_events": 61, "base_rate_annual": 0.00524}
+  ],
+  "standard_universe": {
+    "rule": "revenue above $1M and total assets above $10M; the screen every published distress figure was measured inside",
+    "revenue_min": 1000000,
+    "assets_min": 10000000,
+    "inside": {"auc": 0.8893, "ci": [0.8716, 0.9064], "test_events": 617},
+    "outside": {"auc": 0.7452, "ci": [0.6558, 0.8329], "test_events": 74}
+  }
+}

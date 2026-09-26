@@ -4,6 +4,7 @@ import argparse
 import importlib.resources
 import json
 import math
+import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -75,6 +76,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--market-db",
         default=".cache/market/market.sqlite3",
         help="SQLite market-history cache",
+    )
+    parser.add_argument(
+        "--grade-history",
+        type=Path,
+        metavar="FILE",
+        help=(
+            "grade change log carried between all-ticker runs; "
+            "defaults to $ASSAY_GRADE_HISTORY, or no carry-over"
+        ),
     )
     parser.add_argument(
         "--sync-market",
@@ -365,6 +375,10 @@ def run_all(args: argparse.Namespace) -> dict[str, Any]:
                 sp500_market_value_source=args.sp500_market_value_source,
                 market_feed=args.market_feed,
                 live_market_feed=args.live_market_feed,
+                grade_history_path=(
+                    args.grade_history
+                    or (Path(os.environ["ASSAY_GRADE_HISTORY"]) if os.environ.get("ASSAY_GRADE_HISTORY") else None)
+                ),
             ).to_dict()
     return {
         "mode": "all",

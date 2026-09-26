@@ -340,6 +340,90 @@ def detect_late_filings(
     return LateFilerResult("resolved", bool(receipts), lookback_days, tuple(receipts))
 
 
+PERIODIC_FORMS = frozenset({"10-K", "10-Q", "10-KT", "10-QT", "20-F", "40-F"})
+
+
+@dataclass(frozen=True)
+class FilingGapResult:
+    status: str
+    days: int | None
+    last_form: str | None
+    last_filing_date: str | None
+    last_accession: str | None
+    last_filing_url: str | None
+    ceased: bool | None
+    threshold_days: int
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": "filing_gap",
+            "kind": "diagnostic",
+            "status": self.status,
+            "days": self.days,
+            "last_form": self.last_form,
+            "last_filing_date": self.last_filing_date,
+            "last_accession": self.last_accession,
+            "last_filing_url": self.last_filing_url,
+            "ceased": self.ceased,
+            "threshold_days": self.threshold_days,
+            "forms": sorted(PERIODIC_FORMS),
+            "reason": self.reason,
+        }
+
+
+def detect_filing_gap(
+    submissions: dict[str, Any], as_of: date, *, threshold_days: int = 365
+) -> FilingGapResult:
+    """Days since the last periodic report the SEC received on or before as_of.
+
+    Cessation is reported as its own condition and never folded into a failure label.
+    """
+    recent = submissions.get("filings", {}).get("recent")
+    if not isinstance(recent, dict) or not isinstance(recent.get("form"), list):
+        return FilingGapResult(
+            "unresolved", None, None, None, None, None, None, threshold_days,
+            reason="missing_submissions_recent_filings",
+        )
+    forms = recent["form"]
+    filing_dates = recent.get("filingDate", [])
+    accessions = recent.get("accessionNumber", [])
+    try:
+        cik = int(submissions.get("cik", 0))
+    except (TypeError, ValueError):
+        cik = 0
+    latest: tuple[date, str, str] | None = None
+    for index, form in enumerate(forms):
+        if form not in PERIODIC_FORMS:
+            continue
+        try:
+            filed = date.fromisoformat(filing_dates[index])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if filed > as_of:
+            continue
+        accession = str(accessions[index]) if index < len(accessions) else ""
+        if latest is None or filed > latest[0]:
+            latest = (filed, form, accession)
+    if latest is None:
+        return FilingGapResult(
+            "unresolved", None, None, None, None, None, None, threshold_days,
+            reason="no_periodic_filing_on_record",
+        )
+    filed, form, accession = latest
+    days = (as_of - filed).days
+    return FilingGapResult(
+        "resolved",
+        days,
+        form,
+        filed.isoformat(),
+        accession,
+        filing_index_url(cik, accession),
+        days > threshold_days,
+        threshold_days,
+    )
+
+
 def _positive_roa(
     histories: dict[str, list[ResolvedFact]],
     current_end: str,

@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from .diagnostics import compute_cash_runway, compute_piotroski, detect_late_filings
+from .diagnostics import (
+    compute_cash_runway,
+    compute_piotroski,
+    detect_filing_gap,
+    detect_late_filings,
+)
 from .expectations import compute_implied_expectations, revalue_implied_expectations
 from .factors import (
     CHS_12M_COEFFICIENTS,
@@ -23,6 +28,13 @@ from .factors import (
 )
 from .facts import ResolvedFact, resolve_core_facts
 from .flags import build_company_flags, chs_distress_threshold
+from .history import (
+    empty_history,
+    read_grade_history,
+    record_grade,
+    ticker_history,
+    write_grade_history,
+)
 from .grading import (
     CompanyFactors,
     GRADE_BANDS,
@@ -44,6 +56,7 @@ from .market import (
 )
 from .market_data import MarketStore
 from .sec import BulkSecStore, Company, SecError
+from .stratum import build_condition, load_reliability
 from .universe import UniverseEntry, classify_company
 
 
@@ -94,6 +107,7 @@ class UniverseBuild:
 class FullPipelineResult:
     output_dir: str
     summary: dict[str, Any]
+    grade_history: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"output_dir": self.output_dir, **self.summary}
@@ -187,6 +201,7 @@ def run_full_pipeline(
     sp500_market_value_source: str | None = None,
     market_feed: str = "sip",
     live_market_feed: str = "iex",
+    grade_history_path: str | Path | None = None,
 ) -> FullPipelineResult:
     """Analyze every SEC ticker, then atomically publish one complete artifact tree."""
     destination = Path(output_dir).resolve()
@@ -206,6 +221,7 @@ def run_full_pipeline(
             sp500_market_value_source=sp500_market_value_source,
             market_feed=market_feed,
             live_market_feed=live_market_feed,
+            grade_history_path=grade_history_path,
         )
         verify_output_tree(staging)
         _replace_directory(staging, destination)
@@ -213,7 +229,9 @@ def run_full_pipeline(
         if staging.exists():
             shutil.rmtree(staging)
         raise
-    return FullPipelineResult(str(destination), result.summary)
+    if grade_history_path is not None and result.grade_history is not None:
+        write_grade_history(grade_history_path, result.grade_history)
+    return FullPipelineResult(str(destination), result.summary, result.grade_history)
 
 
 def verify_output_tree(output_dir: str | Path) -> dict[str, Any]:
@@ -780,10 +798,17 @@ def _run_full_pipeline_to_directory(
     sp500_market_value_source: str | None,
     market_feed: str,
     live_market_feed: str,
+    grade_history_path: str | Path | None = None,
 ) -> FullPipelineResult:
     """Write a complete artifact tree in two bounded-memory passes."""
     universe = build_universe(ticker_data, sec_store, as_of)
     emit_universe(universe, output)
+    reliability = load_reliability()
+    history = (
+        read_grade_history(grade_history_path)
+        if grade_history_path is not None
+        else empty_history()
+    )
     eligible = [entry for entry in universe.entries if entry.status == "eligible"]
     cik_counts = Counter(entry.cik for entry in universe.entries)
     benchmark = market_store.bars("SPY", adjustment="all", feed=market_feed)
@@ -965,6 +990,7 @@ def _run_full_pipeline_to_directory(
             )
             runway = compute_cash_runway(companyfacts, as_of)
             late = detect_late_filings(submissions, as_of)
+            filing_gap = detect_filing_gap(submissions, as_of)
             sector_ticker = SECTOR_BENCHMARKS.get(entry.sector or "other", "SPY")
             sector_bars = sector_histories[sector_ticker]
             panel_raw = [] if cik_counts[entry.cik] > 1 else raw
@@ -977,6 +1003,7 @@ def _run_full_pipeline_to_directory(
                 returns,
             )
             core_facts = resolve_core_facts(companyfacts, as_of)
+            condition = build_condition(core_facts, as_of, reliability)
             try:
                 adv = {
                     "status": "resolved",
@@ -1066,6 +1093,10 @@ def _run_full_pipeline_to_directory(
                 "resolved" if issuance.value is not None else "unresolved"
             ] += 1
             grade = grades[entry.ticker]
+            stratum_id = condition["stratum"]["id"] if condition["stratum"] else None
+            record_grade(
+                history, entry.ticker, as_of, grade.grade, grade.percentile, stratum_id
+            )
             chs_model = detailed_chs_raw.to_dict()
             if sp500_market_value is not None:
                 chs_model["market_receipts"]["sp500_market_value_reference"] = {
@@ -1113,12 +1144,15 @@ def _run_full_pipeline_to_directory(
                     "wanted": 14,
                 },
                 "grade": grade.to_dict(),
+                "grade_history": ticker_history(history, entry.ticker),
+                "condition": condition,
                 "grade_sensitivity": sensitivities[entry.ticker],
                 "models": {"chs_12m": chs_model},
                 "diagnostics": {
                     "piotroski_f_score": piotroski.to_dict(),
                     "cash_runway": runway.to_dict(),
                     "late_filer": late.to_dict(),
+                    "filing_gap": filing_gap.to_dict(),
                     "median_dollar_adv": adv,
                 },
                 "flags": [flag.to_dict() for flag in flags],
@@ -1141,6 +1175,11 @@ def _run_full_pipeline_to_directory(
                     "peer_group": grade.peer_group,
                     "sampling_standard_deviation": grade.sampling_standard_deviation,
                     "coverage": grade.coverage,
+                    "stratum": stratum_id,
+                    "standard_universe": condition["standard_universe"]["inside"],
+                    "data_age_days": condition["data_age"]["days"],
+                    "filing_gap_days": filing_gap.days,
+                    "ceased": filing_gap.ceased,
                     "active_flags": [flag.name for flag in flags if flag.active],
                     "live_price": market_snapshot.get("price"),
                     "live_price_timestamp": market_snapshot.get("price_timestamp"),
@@ -1152,6 +1191,7 @@ def _run_full_pipeline_to_directory(
             )
         except (KeyError, OSError, OverflowError, SecError, TypeError, ValueError) as exc:
             analysis_errors[type(exc).__name__] += 1
+            record_grade(history, entry.ticker, as_of, None, None, None)
             report = _analysis_error_report(
                 entry, as_of, universe.generated_at, str(exc)
             )
@@ -1174,6 +1214,13 @@ def _run_full_pipeline_to_directory(
         ticker_artifacts += 1
 
     grade_counts = Counter(row["grade"] or "unresolved" for row in index_rows)
+    stratum_counts = Counter(
+        row.get("stratum") or "unassigned"
+        for row in index_rows
+        if row["status"] == "eligible"
+    )
+    history["updated"] = as_of.isoformat()
+    _write_json(output / "grade_history.json", history)
     summary = {
         **universe.to_dict()["summary"],
         "processed": len(index_rows),
@@ -1192,6 +1239,12 @@ def _run_full_pipeline_to_directory(
         "market_feed": market_feed,
         "live_market_feed": live_market_feed,
         "live_snapshots": live_snapshots,
+        "strata": dict(sorted(stratum_counts.items())),
+        "standard_universe_inside": sum(
+            1 for row in index_rows if row.get("standard_universe") is True
+        ),
+        "ceased": sum(1 for row in index_rows if row.get("ceased") is True),
+        "grade_history_tickers": len(history["tickers"]),
     }
     _write_json(
         output / "index.json",
@@ -1328,7 +1381,7 @@ def _run_full_pipeline_to_directory(
         or actual_ticker_files != expected_ticker_files
     ):
         raise RuntimeError("exhaustiveness audit failed: not every ticker was emitted")
-    return FullPipelineResult(str(output.resolve()), summary)
+    return FullPipelineResult(str(output.resolve()), summary, history)
 
 
 def _replace_directory(staging: Path, destination: Path) -> None:
@@ -1619,6 +1672,13 @@ def _methodology_artifact(
             "verdict": None,
             "predictive_claim": False,
             "quadrants": False,
+        },
+        "reliability": load_reliability(),
+        "condition": {
+            "size_strata": "total assets, five bands with cut points fixed on the 2012-2019 training window",
+            "standard_universe": "revenue above $1M and assets above $10M; membership is reported, not required",
+            "filing_gap": "days since the last periodic report; ceased when over 365 days; never merged into the failure outcome",
+            "grade_history": "one change point per letter or stratum change, carried between nightly runs",
         },
         "disclaimer": "Informational and educational only. Not investment advice.",
     }
