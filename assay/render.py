@@ -187,6 +187,8 @@ CSS = """
   .bar .drop a { display: block; padding: 3px 12px; }
   .bar .drop a:hover { background: #ffffff; color: #000080; text-decoration: none; }
   .bar form { font-variant: normal; display: flex; gap: 3px; }
+  .sitemap { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 12px; margin: 10px 0 8px; }
+  .sitemap b { font-variant: small-caps; letter-spacing: .04em; }
   .credits summary { cursor: pointer; }
   .credits p { margin: 2px 0 0; }
   .ranges { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 0 0 4px; font-size: 12px; }
@@ -232,6 +234,21 @@ def _nav_link(base: str, path: str, label: str) -> str:
 
 
 CHARSET = '<meta charset="utf-8">'
+
+
+REPO_URL = "https://github.com/ekruges/assay"
+SITE_URL = "https://ezrakruger.cc"
+
+
+def site_map(page_link: str = "./") -> str:
+    """Every page of the site in its menu groups, for the foot of every page, with the code and the author's site."""
+    base = escape(page_link or "./")
+    groups = ['<div><b>Pages</b><br>' + " &middot; ".join(_nav_link(base, path, label) for path, label, children in NAV if not children) + "</div>"]
+    for path, label, children in NAV:
+        if children:
+            groups.append(f"<div><b>{escape(label)}</b><br>" + " &middot; ".join(_nav_link(base, child_path, child_label) for child_path, child_label in children) + "</div>")
+    groups.append(f'<div><b>Source</b><br><a href="{REPO_URL}">GitHub</a> &middot; <a href="{SITE_URL}">ezrakruger.cc</a></div>')
+    return '<div class="sitemap">' + "".join(groups) + "</div>"
 
 
 def credit_footer() -> str:
@@ -1021,7 +1038,7 @@ def render(
         '<hr><div class="footer">'
         f'<p class="small">{escape(report.get("disclaimer") or "Not investment advice. Informational and educational only. Data from SEC EDGAR, may contain errors, is not warranted.")}</p>'
         '<p class="small">If you have any comments about this page, the methodology and every line of code that produced it are in the public repository. However, due to the limited number of personnel, we are unable to provide a direct response.</p>'
-        f'{credit_footer()}<p class="small">Updated {escape(long_date(as_of))}</p></div></div>'
+        f'{site_map(base)}{credit_footer()}<p class="small">Updated {escape(long_date(as_of))}</p></div></div>'
     )
     out.append(TIP_SCRIPT)
     return "\n".join(out)

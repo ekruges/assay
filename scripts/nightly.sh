@@ -58,5 +58,5 @@ if [ -n "${ASSAY_SITE_DIR:-}" ]; then
     --history "$ASSAY_GRADE_HISTORY" --history-index "$history_index" --detail "$detail_dir" \
     --runs "$runs" --logs "$logs" \
     --prices .state/prices.json --descriptions "$descriptions" --calendar .state/filing_calendar.json \
-    --asset-base img/ --pdf --site-root "${ASSAY_SITE_ROOT:-/}"
+    --asset-base img/ --pdf --site-root "${ASSAY_SITE_ROOT:-/}" --featured "${ASSAY_FEATURED:-$project_dir/.state/featured.jsonl}"
 fi

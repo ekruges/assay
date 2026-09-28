@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 
 from assay import animals
-from assay.home import best_ranked, featured, load, movers, render
+from assay.home import best_ranked, featured, features, load, load_featured, movers, record_featured, render
 from assay.market_data import MarketStore
 from assay.pipeline import run_full_pipeline
 from assay.sec import BulkSecStore
@@ -43,6 +43,26 @@ class HomeTests(unittest.TestCase):
         rows = [{"ticker": "GNE", "percentile": 0.012}, {"ticker": "CWCO", "percentile": 0.0}, {"ticker": "NONE", "percentile": None}]
         self.assertEqual(best_ranked(rows)["ticker"], "CWCO")
         self.assertIsNone(best_ranked([{"ticker": "NONE", "percentile": None}]))
+
+    def test_features_rotate_unless_first_in_sector(self) -> None:
+        rows = [{"ticker": "AAA", "grade": "A", "percentile": 0.01, "sector": "shops", "implied_expectations": {}},
+                {"ticker": "BBB", "grade": "A", "percentile": 0.02, "sector": "shops", "implied_expectations": {}},
+                {"ticker": "CCC", "grade": "A", "percentile": 0.0, "sector": "energy", "implied_expectations": {}},
+                {"ticker": "EEE", "grade": "E", "percentile": 0.99, "sector": "shops", "implied_expectations": {}}]
+        state = {"graded": rows, "mcap": {"AAA": 2e10, "BBB": 2e10, "CCC": 2e10, "EEE": 2e10}, "recent_features": set()}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"])
+        state["recent_features"] = {"CCC", "EEE"}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"], "first and last in their sectors stay featured")
+        state["graded"][2]["percentile"] = 0.005
+        state["graded"].append({"ticker": "DDD", "grade": "A", "percentile": 0.001, "sector": "energy", "implied_expectations": {}})
+        state["mcap"]["DDD"] = 1e9
+        self.assertEqual([p["row"]["ticker"] for p in features(state)][0], "AAA", "a recently featured bull that is no longer first yields")
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "featured.jsonl"
+            record_featured(log, "2026-09-27", [{"row": {"ticker": "AAA"}, "kicker": "Bull of the Day"}])
+            record_featured(log, "2026-09-27", [{"row": {"ticker": "ZZZ"}, "kicker": "Bull of the Day"}])
+            self.assertEqual(load_featured(log, "2026-09-28"), {"AAA"})
+            self.assertEqual(load_featured(log, "2026-10-20"), set())
 
     def test_movers_count_only_letter_changes_within_the_year(self) -> None:
         rows = [{"ticker": "OLD", "grade": "E", "percentile": 0.9}, {"ticker": "NEW", "grade": "E", "percentile": 0.9}]

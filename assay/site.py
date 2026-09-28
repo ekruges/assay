@@ -22,7 +22,7 @@ from typing import Any
 from . import animals, export, home
 from .pdf import company_report
 from .history import ticker_history
-from .render import CHARSET, CSS, FACTORS, FLAG_LABELS, TIP_SCRIPT, WARN_SYMBOL, credit_footer, _company_cell, _money, density_chart, load_peers, long_date, nav_bar, pct_points, peer_factor_medians, render as render_company
+from .render import CHARSET, CSS, FACTORS, FLAG_LABELS, TIP_SCRIPT, WARN_SYMBOL, credit_footer, site_map, _company_cell, _money, density_chart, load_peers, long_date, nav_bar, pct_points, peer_factor_medians, render as render_company
 from .stratum import load_reliability
 
 SECTOR_LABELS = {
@@ -72,6 +72,7 @@ def chrome(title: str, body: str, as_of: str, page_link: str = "./", credits: bo
         '<div class="center"><h1>Assay</h1><p><b>Financial-condition grades for SEC filers</b></p></div>'
         f"{nav_bar(page_link)}{body}"
         '<hr><div class="footer"><p class="small">Not investment advice. Informational and educational only. No adviser relationship. Data from SEC EDGAR, may contain errors, is not warranted. The grade ranks reported financial condition and is not a return forecast.</p>'
+        + site_map(page_link)
         + (credit_footer() if credits else "")
         + f'<p class="small">Updated {escape(long_date(as_of))}</p></div></div>' + TIP_SCRIPT
     )
@@ -1138,7 +1139,8 @@ def stub_page(entry: dict[str, Any], as_of: str, page_link: str = "./") -> str:
 
 def build(data: Path, out: Path, history: Path | None, prices: Path | None, descriptions: Path | None, tickers: list[str] | None,
           page_link: str = "./", calendar: Path | None = None, history_index: Path | None = None, asset_base: str | None = None, pdfs: bool = False,
-          detail: Path | None = None, runs: Path | None = None, logs: Path | None = None, only: list[str] | None = None, site_root: str = "/") -> dict[str, int]:
+          detail: Path | None = None, runs: Path | None = None, logs: Path | None = None, only: list[str] | None = None, site_root: str = "/",
+          featured: Path | None = None) -> dict[str, int]:
     out.mkdir(parents=True, exist_ok=True)
     if asset_base:
         animals.configure(asset_base)
@@ -1146,6 +1148,7 @@ def build(data: Path, out: Path, history: Path | None, prices: Path | None, desc
         for asset in animals.asset_files():
             (out / asset_base.rstrip("/") / asset.name).write_bytes(asset.read_bytes())
     state = home.load(data, history)
+    state["recent_features"] = home.load_featured(featured, state["index"]["as_of"])
     prices_map = json.loads(prices.read_text(encoding="utf-8")) if prices and prices.exists() else {}
     desc_map = json.loads(descriptions.read_text(encoding="utf-8")) if descriptions and descriptions.exists() else {}
     cal = json.loads(calendar.read_text(encoding="utf-8")) if calendar and calendar.exists() else None
@@ -1192,6 +1195,8 @@ def build(data: Path, out: Path, history: Path | None, prices: Path | None, desc
         return {"companies": 0, "stubs": 0, "sectors": 0, "pages": len(only), "rescans": 0, "pdfs": 0}
     for name, render_page in pages.items():
         (out / name).write_text(render_page(), encoding="utf-8")
+    if featured:
+        home.record_featured(featured, state["index"]["as_of"], home.features(state))
     sectors = sorted({r.get("sector") or "other" for r in state["graded"]})
     for sector in sectors:
         (out / f"sector-{sector}.html").write_text(sector_page(state, sector, page_link), encoding="utf-8")
@@ -1261,11 +1266,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--logs", type=Path, help="folder of nightly logs to publish")
     parser.add_argument("--only", nargs="+", metavar="PAGE", help="write only these pages, the logs and status.json, from the existing tree")
     parser.add_argument("--site-root", default="/", help="absolute path the site is served under, for the error pages, such as /assay/")
+    parser.add_argument("--featured", type=Path, help="featured.jsonl, the log that keeps the front page features rotating")
     parser.add_argument("--pdf", action="store_true", help="also write a PDF report per company")
     args = parser.parse_args(argv)
     if not args.all and not args.tickers:
         parser.error("pass --tickers or --all")
-    result = build(args.data, args.out, args.history, args.prices, args.descriptions, None if args.all else args.tickers, args.page_link, args.calendar, args.history_index, args.asset_base, args.pdf, args.detail, args.runs, args.logs, args.only, args.site_root)
+    result = build(args.data, args.out, args.history, args.prices, args.descriptions, None if args.all else args.tickers, args.page_link, args.calendar, args.history_index, args.asset_base, args.pdf, args.detail, args.runs, args.logs, args.only, args.site_root, args.featured)
     print(json.dumps(result))
     return 0
 

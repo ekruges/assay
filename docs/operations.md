@@ -132,6 +132,10 @@ ticker and offers the EDGAR company search for it.
 `status.json` at the site root and `runs.html` show the latest run; a run that did
 not complete is recorded with its log.
 
+The front page features rotate: `.state/featured.jsonl` logs each day's picks, and a
+company featured within the last 14 days yields to the next candidate unless it is
+first (for the bear, last) in its sector that day.
+
 ## Nightly run
 
 `scripts/homelab-nightly.sh` under a systemd timer at 03:00 America/New_York, on a

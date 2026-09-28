@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from . import animals
-from .render import CHARSET, CSS, FLAG_LABELS, TIP_SCRIPT, WARN_SYMBOL, credit_footer, _company_cell, _company_name, _money, long_date, nav_bar, pct_points
+from .render import CHARSET, CSS, FLAG_LABELS, TIP_SCRIPT, WARN_SYMBOL, credit_footer, site_map, _company_cell, _company_name, _money, long_date, nav_bar, pct_points
 
 HOME_CSS = """
   .features { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 6px 0 14px; }
@@ -73,22 +73,60 @@ def _momentum(row: dict[str, Any]) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+FEATURE_COOLDOWN_DAYS = 14
+
+
+def load_featured(path: Path | None, as_of: str, days: int = FEATURE_COOLDOWN_DAYS) -> set[str]:
+    """Tickers featured within `days` before as_of, from the featured log (one JSON line per run)."""
+    if not path or not path.exists():
+        return set()
+    since = (date.fromisoformat(as_of) - timedelta(days=days)).isoformat()
+    recent: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if since <= entry.get("as_of", "") < as_of:
+            recent.update(t for t in entry.get("tickers", []) if t)
+    return recent
+
+
+def record_featured(path: Path, as_of: str, picks: list[dict[str, Any]]) -> None:
+    """Append the day's picks unless the day is already on file, so a rebuild does not advance the rotation."""
+    if path.exists() and any(line.strip().startswith('{"as_of": "%s"' % as_of) for line in path.read_text(encoding="utf-8").splitlines()):
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"as_of": as_of, "tickers": [p["row"]["ticker"] for p in picks], "kickers": [p["kicker"] for p in picks]}) + "\n")
+
+
 def features(state: dict[str, Any]) -> list[dict[str, Any]]:
-    """Three companies picked by stated rules; each carries its rule for the page."""
+    """Three companies picked by stated rules; each carries its rule for the page. A company featured within the last
+    FEATURE_COOLDOWN_DAYS days yields to the next candidate unless it is first (for the bear, last) in its sector that day."""
     graded, mcap = state["graded"], state["mcap"]
+    recent = state.get("recent_features") or set()
+    first: dict[str, float] = {}
+    last: dict[str, float] = {}
+    for r in graded:
+        sector = r.get("sector") or "other"
+        first[sector] = min(first.get(sector, 1.0), r["percentile"])
+        last[sector] = max(last.get(sector, 0.0), r["percentile"])
     big = [r for r in graded if mcap.get(r["ticker"], 0) >= 1e10]
     small = [r for r in graded if 0 < mcap.get(r["ticker"], 0) < 2e9]
     bulls = sorted((r for r in big if r["grade"][0] == "A"), key=lambda r: r["percentile"])
     bears = sorted((r for r in big if r["grade"][0] == "E"), key=lambda r: -r["percentile"])
     sleepers = sorted((r for r in small if r["grade"][0] == "A" and (_momentum(r) or 0) < 0), key=lambda r: r["percentile"])
+    cooldown = f"; not repeated within {FEATURE_COOLDOWN_DAYS} days unless"
     picks = []
-    for kicker, animal, group, rule in (
-        ("Bull of the Day", "bull", bulls, "graded A with market equity over $10B; strongest percentile in its sector"),
-        ("Bear of the Day", "bear", bears, "graded E with market equity over $10B; weakest percentile in its sector"),
-        ("Sleeper", "fox", sleepers, "graded A with market equity under $2B and 12-1 momentum below zero; strongest percentile"),
+    for kicker, animal, group, rule, extreme in (
+        ("Bull of the Day", "bull", bulls, "graded A with market equity over $10B; strongest percentile in its sector", first),
+        ("Bear of the Day", "bear", bears, "graded E with market equity over $10B; weakest percentile in its sector", last),
+        ("Sleeper", "fox", sleepers, "graded A with market equity under $2B and 12-1 momentum below zero; strongest percentile", first),
     ):
-        if group:
-            picks.append({"kicker": kicker, "animal": animal, "row": group[0], "rule": rule})
+        fresh = [r for r in group if r["ticker"] not in recent or r["percentile"] == extreme.get(r.get("sector") or "other")]
+        if fresh:
+            picks.append({"kicker": kicker, "animal": animal, "row": fresh[0], "rule": rule + cooldown + (" last in its sector" if extreme is last else " first in its sector")})
     return picks
 
 
@@ -252,6 +290,7 @@ def render(state: dict[str, Any], page_link: str = "./") -> str:
     # footer
     out.append(
         '<hr><div class="footer"><p class="small">Not investment advice. Informational and educational only. No adviser relationship. Data from SEC EDGAR, may contain errors, is not warranted. The grade ranks reported financial condition and is not a return forecast.</p>'
+        + site_map(page_link)
         + credit_footer()
         + '<p class="small">If you have any comments about this page, the methodology and every line of code that produced it are in the public repository. However, due to the limited number of personnel, we are unable to provide a direct response.</p>'
         f'<p class="small">Updated {escape(long_date(as_of))}</p></div></div>' + TIP_SCRIPT

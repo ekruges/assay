@@ -53,7 +53,8 @@ class RenderTests(unittest.TestCase):
         self.assertNotIn("<script src", html)
         external = {href for href in re.findall(r'href="(https?://[^"]+)"', html)}
         self.assertTrue(external, "expected receipt links")
-        self.assertTrue(all(href.startswith(("https://www.sec.gov/", "https://data.sec.gov/", "https://commons.wikimedia.org/")) for href in external), external)
+        allowed = ("https://www.sec.gov/", "https://data.sec.gov/", "https://commons.wikimedia.org/", "https://github.com/ekruges/assay", "https://ezrakruger.cc")
+        self.assertTrue(all(href.startswith(allowed) for href in external), external)
         self.assertIn('<sup class="c">[', html)
         self.assertIn("Split-adjusted close over twelve months", html)
         self.assertIn('id="sources"', html)
