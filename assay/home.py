@@ -74,21 +74,30 @@ def _momentum(row: dict[str, Any]) -> float | None:
 
 
 FEATURE_COOLDOWN_DAYS = 14
+FEATURE_MAX_STREAK = 3
 
 
-def load_featured(path: Path | None, as_of: str, days: int = FEATURE_COOLDOWN_DAYS) -> set[str]:
-    """Tickers featured within `days` before as_of, from the featured log (one JSON line per run)."""
+def load_featured(path: Path | None, as_of: str, days: int = FEATURE_COOLDOWN_DAYS) -> dict[str, int]:
+    """Tickers featured within `days` before as_of, each with its streak: how many of the most recent runs in a row
+    featured it, or 0 when it was featured in the window but not in the latest run."""
     if not path or not path.exists():
-        return set()
+        return {}
     since = (date.fromisoformat(as_of) - timedelta(days=days)).isoformat()
-    recent: set[str] = set()
+    entries = []
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             entry = json.loads(line)
         except ValueError:
             continue
         if since <= entry.get("as_of", "") < as_of:
-            recent.update(t for t in entry.get("tickers", []) if t)
+            entries.append(entry)
+    entries.sort(key=lambda e: e["as_of"])
+    recent: dict[str, int] = {t: 0 for e in entries for t in e.get("tickers", []) if t}
+    for ticker in recent:
+        for entry in reversed(entries):
+            if ticker not in entry.get("tickers", []):
+                break
+            recent[ticker] += 1
     return recent
 
 
@@ -103,9 +112,10 @@ def record_featured(path: Path, as_of: str, picks: list[dict[str, Any]]) -> None
 
 def features(state: dict[str, Any]) -> list[dict[str, Any]]:
     """Three companies picked by stated rules; each carries its rule for the page. A company featured within the last
-    FEATURE_COOLDOWN_DAYS days yields to the next candidate unless it is first (for the bear, last) in its sector that day."""
+    FEATURE_COOLDOWN_DAYS days yields to the next candidate; one that is first (for the bear, last) in its sector may
+    keep the spot for FEATURE_MAX_STREAK runs in a row, then yields like any other."""
     graded, mcap = state["graded"], state["mcap"]
-    recent = state.get("recent_features") or set()
+    recent = state.get("recent_features") or {}
     first: dict[str, float] = {}
     last: dict[str, float] = {}
     for r in graded:
@@ -117,16 +127,17 @@ def features(state: dict[str, Any]) -> list[dict[str, Any]]:
     bulls = sorted((r for r in big if r["grade"][0] == "A"), key=lambda r: r["percentile"])
     bears = sorted((r for r in big if r["grade"][0] == "E"), key=lambda r: -r["percentile"])
     sleepers = sorted((r for r in small if r["grade"][0] == "A" and (_momentum(r) or 0) < 0), key=lambda r: r["percentile"])
-    cooldown = f"; not repeated within {FEATURE_COOLDOWN_DAYS} days unless"
+    cooldown = f"; not repeated within {FEATURE_COOLDOWN_DAYS} days, though"
     picks = []
     for kicker, animal, group, rule, extreme in (
         ("Bull of the Day", "bull", bulls, "graded A with market equity over $10B; strongest percentile in its sector", first),
         ("Bear of the Day", "bear", bears, "graded E with market equity over $10B; weakest percentile in its sector", last),
         ("Sleeper", "fox", sleepers, "graded A with market equity under $2B and 12-1 momentum below zero; strongest percentile", first),
     ):
-        fresh = [r for r in group if r["ticker"] not in recent or r["percentile"] == extreme.get(r.get("sector") or "other")]
+        fresh = [r for r in group if r["ticker"] not in recent
+                 or (r["percentile"] == extreme.get(r.get("sector") or "other") and recent[r["ticker"]] < FEATURE_MAX_STREAK)]
         if fresh:
-            picks.append({"kicker": kicker, "animal": animal, "row": fresh[0], "rule": rule + cooldown + (" last in its sector" if extreme is last else " first in its sector")})
+            picks.append({"kicker": kicker, "animal": animal, "row": fresh[0], "rule": rule + cooldown + (" the last" if extreme is last else " the first") + f" in its sector may hold the spot for {FEATURE_MAX_STREAK} days"})
     return picks
 
 

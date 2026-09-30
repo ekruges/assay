@@ -49,20 +49,27 @@ class HomeTests(unittest.TestCase):
                 {"ticker": "BBB", "grade": "A", "percentile": 0.02, "sector": "shops", "implied_expectations": {}},
                 {"ticker": "CCC", "grade": "A", "percentile": 0.0, "sector": "energy", "implied_expectations": {}},
                 {"ticker": "EEE", "grade": "E", "percentile": 0.99, "sector": "shops", "implied_expectations": {}}]
-        state = {"graded": rows, "mcap": {"AAA": 2e10, "BBB": 2e10, "CCC": 2e10, "EEE": 2e10}, "recent_features": set()}
+        state = {"graded": rows, "mcap": {"AAA": 2e10, "BBB": 2e10, "CCC": 2e10, "EEE": 2e10}, "recent_features": {}}
         self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"])
-        state["recent_features"] = {"CCC", "EEE"}
-        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"], "first and last in their sectors stay featured")
+        state["recent_features"] = {"CCC": 1, "EEE": 2}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"], "first and last in their sectors stay featured on a short streak")
+        state["recent_features"] = {"CCC": 3, "EEE": 3}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["AAA"], "after three days in a row even the first in its sector yields")
+        state["recent_features"] = {"CCC": 0, "EEE": 0}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["AAA"], "a company off its streak is still in its cooldown")
+        state["recent_features"] = {}
         state["graded"][2]["percentile"] = 0.005
         state["graded"].append({"ticker": "DDD", "grade": "A", "percentile": 0.001, "sector": "energy", "implied_expectations": {}})
         state["mcap"]["DDD"] = 1e9
         self.assertEqual([p["row"]["ticker"] for p in features(state)][0], "AAA", "a recently featured bull that is no longer first yields")
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "featured.jsonl"
+            record_featured(log, "2026-09-25", [{"row": {"ticker": "AAA"}, "kicker": "Bull of the Day"}, {"row": {"ticker": "YYY"}, "kicker": "Sleeper"}])
+            record_featured(log, "2026-09-26", [{"row": {"ticker": "AAA"}, "kicker": "Bull of the Day"}])
             record_featured(log, "2026-09-27", [{"row": {"ticker": "AAA"}, "kicker": "Bull of the Day"}])
             record_featured(log, "2026-09-27", [{"row": {"ticker": "ZZZ"}, "kicker": "Bull of the Day"}])
-            self.assertEqual(load_featured(log, "2026-09-28"), {"AAA"})
-            self.assertEqual(load_featured(log, "2026-10-20"), set())
+            self.assertEqual(load_featured(log, "2026-09-28"), {"AAA": 3, "YYY": 0})
+            self.assertEqual(load_featured(log, "2026-10-20"), {})
 
     def test_movers_count_only_letter_changes_within_the_year(self) -> None:
         rows = [{"ticker": "OLD", "grade": "E", "percentile": 0.9}, {"ticker": "NEW", "grade": "E", "percentile": 0.9}]
