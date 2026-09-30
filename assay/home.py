@@ -74,7 +74,7 @@ def _momentum(row: dict[str, Any]) -> float | None:
 
 
 FEATURE_COOLDOWN_DAYS = 14
-FEATURE_MAX_STREAK = 3
+FEATURE_MAX_STREAK = 2
 
 
 def load_featured(path: Path | None, as_of: str, days: int = FEATURE_COOLDOWN_DAYS) -> dict[str, int]:
@@ -135,7 +135,7 @@ def features(state: dict[str, Any]) -> list[dict[str, Any]]:
         ("Sleeper", "fox", sleepers, "graded A with market equity under $2B and 12-1 momentum below zero; strongest percentile", first),
     ):
         fresh = [r for r in group if r["ticker"] not in recent
-                 or (r["percentile"] == extreme.get(r.get("sector") or "other") and recent[r["ticker"]] < FEATURE_MAX_STREAK)]
+                 or (r["percentile"] == extreme.get(r.get("sector") or "other") and 0 < recent[r["ticker"]] < FEATURE_MAX_STREAK)]
         if fresh:
             picks.append({"kicker": kicker, "animal": animal, "row": fresh[0], "rule": rule + cooldown + (" the last" if extreme is last else " the first") + f" in its sector may hold the spot for {FEATURE_MAX_STREAK} days"})
     return picks

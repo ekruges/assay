@@ -51,13 +51,13 @@ class HomeTests(unittest.TestCase):
                 {"ticker": "EEE", "grade": "E", "percentile": 0.99, "sector": "shops", "implied_expectations": {}}]
         state = {"graded": rows, "mcap": {"AAA": 2e10, "BBB": 2e10, "CCC": 2e10, "EEE": 2e10}, "recent_features": {}}
         self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"])
-        state["recent_features"] = {"CCC": 1, "EEE": 2}
-        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"], "first and last in their sectors stay featured on a short streak")
-        state["recent_features"] = {"CCC": 3, "EEE": 3}
-        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["AAA"], "after three days in a row even the first in its sector yields")
+        state["recent_features"] = {"CCC": 1, "EEE": 1}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["CCC", "EEE"], "first and last in their sectors stay featured for a second day")
+        state["recent_features"] = {"CCC": 2, "EEE": 2}
+        self.assertEqual([p["row"]["ticker"] for p in features(state)], ["AAA"], "after two days in a row even the first in its sector yields")
         state["recent_features"] = {"CCC": 0, "EEE": 0}
         self.assertEqual([p["row"]["ticker"] for p in features(state)], ["AAA"], "a company off its streak is still in its cooldown")
-        state["recent_features"] = {}
+        state["recent_features"] = {"CCC": 1, "EEE": 1}
         state["graded"][2]["percentile"] = 0.005
         state["graded"].append({"ticker": "DDD", "grade": "A", "percentile": 0.001, "sector": "energy", "implied_expectations": {}})
         state["mcap"]["DDD"] = 1e9
