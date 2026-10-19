@@ -132,8 +132,8 @@ ticker and offers the EDGAR company search for it.
 `status.json` at the site root and `runs.html` show the latest run; a run that did
 not complete is recorded with its log.
 
-Every published tree is kept under `wayback/<as_of>/` on the web host, hard-linked
-from the live tree at publish time, without `prices/`, `history/` and `img/`. The
+`scripts/publish-site.sh` uploads the site, swaps it whole, and keeps every published
+tree under `wayback/<as_of>/` on the web host, hard-linked from the live tree, without `prices/`, `history/` and `img/`. The
 retention rule is the one the records use: daily for 92 days, then the first run on
 or after the 21st of each month. `wayback/dates.json` lists the days; the page
 script shows a banner with previous, next and today's version when a page is served

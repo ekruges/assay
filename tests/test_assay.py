@@ -1709,10 +1709,12 @@ class NightlyWorkflowTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         nightly = (root / "scripts" / "nightly.sh").read_text(encoding="utf-8")
         wrapper = (root / "scripts" / "homelab-nightly.sh").read_text(encoding="utf-8")
+        publish = (root / "scripts" / "publish-site.sh").read_text(encoding="utf-8")
         self.assertNotIn("git ", nightly, "the run never touches a repository")
         self.assertIn("--verify-output data", nightly, "the tree is verified before the site is built")
         self.assertIn("--snapshot", nightly, "every run records its rescan")
-        self.assertIn("$target.new", wrapper, "the site is uploaded beside the live tree and swapped whole")
+        self.assertIn("$target.new", publish, "the site is uploaded beside the live tree and swapped whole")
+        self.assertIn("wayback/$as_of", publish, "every published tree is kept by day")
         self.assertIn("--failed", wrapper, "a run that did not complete is still recorded")
 
 class UniverseTests(unittest.TestCase):
