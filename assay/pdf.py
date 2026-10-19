@@ -59,6 +59,15 @@ def wrap(text: str, width: float, size: float, bold: bool = False) -> list[str]:
     return lines
 
 
+def fit(text: str, width: float, size: float, bold: bool = False) -> str:
+    """The text, cut with an ellipsis where it would not fit the width."""
+    if text_width(text, size, bold) <= width:
+        return text
+    while text and text_width(text + "...", size, bold) > width:
+        text = text[:-1]
+    return text.rstrip() + "..."
+
+
 def _jpeg_size(data: bytes) -> tuple[int, int]:
     i = 2
     while i < len(data):
@@ -222,7 +231,7 @@ class Report:
             self.y = PAGE_H - MARGIN
 
     def heading(self, text: str, note: str | None = None) -> None:
-        self.need(34)
+        self.need(34 + 44)
         self.y -= 12
         self.pdf.text(MARGIN, self.y, text, 11, bold=True, color=NAVY)
         if note:
@@ -238,45 +247,85 @@ class Report:
             self.y -= size + 3.5
         self.y -= 2
 
-    def table(self, columns: list[tuple[str, float, str]], rows: list[Any], size: float = 8.5, shade_groups: bool = True, links: dict[int, str] | None = None) -> None:
-        """columns: (header, width, align in left|right|wrap). A row is a list of cells, a string for a group line, or a tuple (cells, draw) with a callback."""
+    def table(self, columns: list[tuple[str, float, str]], rows: list[Any], size: float = 8.5, shade_groups: bool = True, links: dict[int, str] | None = None, highlight: set[int] | None = None) -> None:
+        """columns: (header, width, align in left|right|wrap|fit). A row is a list of cells, a string for a group line,
+        ("note", text) for an italic line across the table, or a tuple (cells, draw) with a callback. `fit` cuts a
+        cell with an ellipsis instead of wrapping; `highlight` shades the numbered rows."""
         x0 = MARGIN
         total = sum(w for _, w, _ in columns)
-        self.need(size + 16)
+        self.need(size + 18)
         x = x0
         for header, width, align in columns:
             self.pdf.text(x + (width - 3 if align == "right" else 2), self.y, header, size - 1, bold=True, color=NAVY, align=("right" if align == "right" else "left"))
             x += width
         self.y -= 4
         self.pdf.line(x0, self.y, x0 + total, self.y, 0.7)
-        self.y -= size + 3
+        self.y -= size + 4
         for n, row in enumerate(rows):
             draw = None
+            if isinstance(row, tuple) and row and row[0] == "note":
+                lines = wrap(str(row[1]), total - 16, size - 0.5)
+                height = (size + 3) * len(lines) + 2
+                self.need(height)
+                for i, line in enumerate(lines):
+                    self.pdf.text(x0 + 12, self.y - i * (size + 3), line, size - 0.5, italic=True, color=(0.3, 0.3, 0.35))
+                self.y -= height
+                continue
             if isinstance(row, tuple):
                 row, draw = row
             if isinstance(row, str):
-                self.need(size + 8)
-                self.pdf.rect(x0, self.y - 3.5, total, size + 6, fill=SHADE)
-                self.pdf.text(x0 + 2, self.y, row, size - 0.5, bold=True, color=NAVY)
-                self.y -= size + 6
+                self.need(size + 9)
+                self.pdf.rect(x0, self.y - 3.5, total, size + 7, fill=SHADE)
+                self.pdf.text(x0 + 3, self.y, row, size - 0.5, bold=True, color=NAVY)
+                self.y -= size + 7
                 continue
             cells = [("" if c is None else str(c)) for c in row]
-            wrapped = [wrap(c, w - 5, size) if a == "wrap" else [c] for c, (_, w, a) in zip(cells, columns)]
+            wrapped = []
+            for c, (_, w, a) in zip(cells, columns):
+                if a == "wrap":
+                    wrapped.append(wrap(c, w - 5, size))
+                elif a == "fit":
+                    wrapped.append([fit(c, w - 5, size)])
+                else:
+                    wrapped.append([c])
             lines = max(len(w) for w in wrapped) if wrapped else 1
-            height = size * lines + 4 * (lines - 1) + 4
+            height = size * lines + 3.5 * (lines - 1) + 5
             self.need(height)
+            if highlight and n in highlight:
+                self.pdf.rect(x0, self.y - height + size + 1.5, total, height, fill=SHADE)
             x = x0
             for (header, width, align), text_lines in zip(columns, wrapped):
                 for i, line in enumerate(text_lines):
-                    self.pdf.text(x + (width - 3 if align == "right" else 2), self.y - i * (size + 4), line, size, align=("right" if align == "right" else "left"))
+                    self.pdf.text(x + (width - 3 if align == "right" else 2), self.y - i * (size + 3.5), line, size, align=("right" if align == "right" else "left"))
                 x += width
             if draw:
                 draw(self.pdf, x0, self.y, columns)
             if links and n in links:
                 self.pdf.link(x0, self.y - 3, total, size + 4, links[n])
             self.y -= height
-            self.pdf.line(x0, self.y + height - 3.4, x0 + total, self.y + height - 3.4, 0.3, GREY)
-        self.y -= 6
+            self.pdf.line(x0, self.y + 1.5, x0 + total, self.y + 1.5, 0.3, GREY)
+        self.y -= 8
+
+    def kv(self, x: float, width: float, rows: list[tuple[str, str, str | None, float | None]], label_w: float = 92.0) -> float:
+        """A column of label, value, optional sub text and optional percentile bar, drawn from the cursor without
+        moving it; returns the height used. Rows never leave the column."""
+        y = self.y
+        for label, value, sub, bar in rows:
+            sub_lines = wrap(sub, width - label_w - 6, 7.5) if sub else []
+            height = 15 + 9.5 * len(sub_lines)
+            self.pdf.line(x, y, x + width, y, 0.3, GREY)
+            self.pdf.text(x + 2, y - 11, label, 8, bold=True, color=NAVY)
+            vx = x + label_w
+            if bar is not None:
+                _bar(self.pdf, vx, y - 8, 70, bar)
+                self.pdf.text(vx + 78, y - 11, fit(value, width - label_w - 82, 9), 9)
+            else:
+                self.pdf.text(vx, y - 11, fit(value, width - label_w - 4, 9), 9)
+            for i, line in enumerate(sub_lines):
+                self.pdf.text(vx, y - 21 - 9.5 * i, line, 7.5, color=(0.3, 0.3, 0.35))
+            y -= height
+        self.pdf.line(x, y, x + width, y, 0.3, GREY)
+        return self.y - y
 
 
 def _bar(pdf: Pdf, x: float, y: float, width: float, percentile: float | None) -> None:
@@ -297,17 +346,19 @@ def _ruler(pdf: Pdf, x: float, y: float, width: float, percentile: float) -> Non
     pdf.polyline([(px - 3.5, y + 11), (px + 3.5, y + 11), (px, y + 4)], fill=NAVY)
 
 
-def _price_chart(pdf: Pdf, x0: float, y0: float, w: float, h: float, prices: list[list[Any]], history: list[dict[str, Any]]) -> None:
+def _price_chart(pdf: Pdf, x0: float, y0: float, w: float, h: float, prices: list[list[Any]], rescans: list[tuple[str, str | None, float | None]]) -> None:
+    """Closes over the window, a lollipop at every rescan in it with the letter held then; letters are kept where
+    neighbors leave room, otherwise only the rescans where the letter changed keep one."""
     closes = [float(p[1]) for p in prices]
     days = [p[0] for p in prices]
     lo, hi = min(closes), max(closes)
-    pad = (hi - lo) * 0.08 or 1
+    pad = (hi - lo) * 0.10 or 1
     span = hi - lo + 2 * pad
-    left, right, top, bottom = 30, 34, 14, 16
+    left, right, top, bottom = 38, 36, 26, 16
     pw, ph = w - left - right, h - top - bottom
 
     def xy(i: int, c: float) -> tuple[float, float]:
-        return (x0 + left + i / (len(closes) - 1) * pw, y0 + bottom + (c - lo + pad) / span * ph)
+        return (x0 + left + i / max(len(closes) - 1, 1) * pw, y0 + bottom + (c - lo + pad) / span * ph)
 
     pts = [xy(i, c) for i, c in enumerate(closes)]
     step = 10 ** math.floor(math.log10(span / 2.5))
@@ -319,27 +370,36 @@ def _price_chart(pdf: Pdf, x0: float, y0: float, w: float, h: float, prices: lis
     while v < hi + pad:
         yy = y0 + bottom + (v - lo + pad) / span * ph
         pdf.line(x0 + left, yy, x0 + left + pw, yy, 0.3, GREY)
-        pdf.text(x0 + left - 3, yy - 2.5, f"${v:,.0f}", 6.5, align="right")
+        pdf.text(x0 + left - 4, yy - 2.5, f"${v:,.0f}", 6.5, align="right")
         v += step
     pdf.line(x0 + left, y0 + bottom, x0 + left + pw, y0 + bottom, 0.6)
     pdf.polyline([(pts[0][0], y0 + bottom), *pts, (pts[-1][0], y0 + bottom)], fill=(0.93, 0.93, 0.97))
     pdf.polyline(pts, 0.9)
     seen: set[str] = set()
-    every = 1 if pw > 320 else 2
+    every = 1 if pw > 300 else 2
     for i, d in enumerate(days):
         if d[:7] not in seen and d[8:10] <= "03" and 0 < i < len(days) - 5:
             seen.add(d[:7])
-            if len(seen) % every == 1 or every == 1:
+            if every == 1 or len(seen) % every == 1:
                 pdf.text(pts[i][0], y0 + 4, date.fromisoformat(d).strftime("%b"), 6.5, align="center")
-    for point in sorted((p for p in (history or []) if p.get("grade")), key=lambda p: p["date"]):
-        if point["date"] < days[0]:
-            idx = 0
+
+    def idx_for(day: str) -> int:
+        return next((i for i, d in enumerate(days) if d >= day), len(days) - 1)
+
+    window = [(d, g, p) for d, g, p in rescans if days[0] <= d <= days[-1]]
+    xs = [pts[idx_for(d)][0] for d, _, _ in window]
+    crowded = any(xs[k] - xs[k - 1] < 12 for k in range(1, len(xs)))
+    changes = [k for k in range(len(window)) if k == 0 or window[k][1] != window[k - 1][1]]
+    heads = set(range(len(window))) if not crowded else {k for k in changes if all(abs(xs[k] - xs[m]) >= 12 for m in changes if m != k)}
+    for k, (d, g, _) in enumerate(window):
+        x, y = pts[idx_for(d)]
+        if k in heads and g:
+            pdf.line(x, y + 2, x, y + 13, 0.6)
+            pdf.circle(x, y + 18, 5.2, fill=(1, 1, 1), stroke=NAVY)
+            pdf.text(x, y + 15.6, g, 5.5 if len(g) > 1 else 7, bold=True, align="center", color=NAVY)
         else:
-            idx = next((i for i, d in enumerate(days) if d >= point["date"]), len(days) - 1)
-        x, y = pts[idx]
-        pdf.circle(x, y, 2.4)
-        pdf.line(x, y + 4, x, y + 11, 0.6)
-        pdf.text(x, y + 13, point["grade"], 7.5, bold=True, align="center", color=NAVY)
+            pdf.line(x, y + 2, x, y + 8, 0.6)
+            pdf.circle(x, y + 9.5, 1.5)
     pdf.circle(pts[-1][0], pts[-1][1], 2.4, fill=(1, 1, 1), stroke=NAVY)
     pdf.text(pts[-1][0] + 5, pts[-1][1] - 2.5, f"${closes[-1]:,.2f}", 7, bold=True)
 
@@ -372,9 +432,10 @@ def _density(pdf: Pdf, x0: float, y0: float, w: float, h: float, values: list[fl
     pdf.line(x0, y0 + bottom, x0 + w, y0 + bottom, 0.6)
     if focal is not None:
         fx, fy = x0 + (focal - lo) / span * w, y0 + bottom + density(focal) / peak * (h - top - bottom)
-        pdf.line(fx, fy, fx, y0 + bottom, 0.6, dash=True)
+        pdf.line(fx, y0 + bottom, fx, y0 + h - 12, 0.6, dash=True)
         pdf.circle(fx, fy, 3)
-        pdf.text(fx + (6 if fx < x0 + w * 0.6 else -6), fy + 5, label, 8, bold=True, align=("left" if fx < x0 + w * 0.6 else "right"), color=NAVY)
+        align = "left" if fx < x0 + w * 0.7 else "right"
+        pdf.text(fx + (5 if align == "left" else -5), y0 + h - 9, label, 8, bold=True, align=align, color=NAVY)
 
 
 def _rescan_chart(pdf: Pdf, x0: float, y0: float, w: float, h: float, rescans: list[tuple[str, str | None, float | None]]) -> None:
@@ -426,6 +487,7 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
     graded = bool(grade.get("status") == "resolved" and grade.get("grade"))
     peers = peers or []
     medians = medians or {}
+    rescans = rescans or []
     condition = report.get("condition") or {}
     stratum, rel = condition.get("stratum") or {}, ((condition.get("reliability") or {}).get("stratum")) or {}
     snapshot, live = report.get("market_snapshot") or {}, report.get("live_implied_expectations") or {}
@@ -434,33 +496,55 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
     flags = report.get("flags", [])
     active = [f for f in flags if f.get("active")]
     latest_filed = max((f.get("filed") or "" for f in report.get("facts", [])), default=None)
+    grey = (0.3, 0.3, 0.35)
 
-    # ---- masthead
+    # ---- masthead and title
     pdf.text(MARGIN, doc.y - 6, "ASSAY", 15, bold=True, color=NAVY)
     pdf.text(MARGIN + 66, doc.y - 6, "Financial-condition grades for SEC filers", 8.5, color=NAVY)
-    pdf.text(PAGE_W - MARGIN, doc.y - 6, f"Company Report, as of {long_date(as_of)}", 8.5, align="right", color=NAVY)
+    pdf.text(PAGE_W - MARGIN, doc.y - 6, f"Company report, as of {long_date(as_of)}", 8.5, align="right", color=NAVY)
     doc.y -= 13
     pdf.line(MARGIN, doc.y, PAGE_W - MARGIN, doc.y, 0.8)
-    doc.y -= 24
-    pdf.text(MARGIN, doc.y, f"{name} ({ticker})", 17, bold=True)
+    doc.y -= 26
+    pdf.text(MARGIN, doc.y, fit(name, INNER - 90, 19, True), 19, bold=True)
+    pdf.text(PAGE_W - MARGIN, doc.y, ticker, 19, bold=True, align="right", color=NAVY)
     doc.y -= 13
-    pdf.text(MARGIN, doc.y, f"{company.get('exchange') or ''}; {sector_label}; SIC {company.get('sic')}, {company.get('sic_description') or ''}; CIK {int(company['cik']):010d}", 8.5)
-    doc.y -= 14
+    pdf.text(MARGIN, doc.y, f"{company.get('exchange') or 'no exchange'}; {sector_label}; SIC {company.get('sic')}, {company.get('sic_description') or ''}; CIK {int(company['cik']):010d}", 8.5, color=grey)
+    doc.y -= 16
 
-    # ---- scoreboard panel: left column of rows, right column with portrait and chart
-    left_w, right_w = 296.0, INNER - 296.0
-    panel_top = doc.y
-    rows: list[tuple[str, str, str | None, Any]] = []
+    # ---- grade band
+    band_h = 78
+    pdf.rect(MARGIN, doc.y - band_h, INNER, band_h, fill=SHADE, stroke=NAVY, width=0.8)
     if graded:
         letter = grade["grade"]
         rank = 1 + sum(1 for p in peers if (p.get("percentile") or 0) < grade["percentile"])
-        rows.append(("Grade", "", None, "grade"))
-        rows.append(("Rank", f"{rank} of {len(peers)}" if peers else f"percentile {pct_points(grade['percentile'])}", None, None))
+        pdf.text(MARGIN + 14, doc.y - 56, letter, 46 if len(letter) == 1 else 30, bold=True, color=NAVY)
+        tx = MARGIN + 118
+        group = (grade.get("peer_group") or company.get("sector") or "").replace("_", " ")
+        where = f"in {sector_label}" if group == sector_label else f"in the pooled {group} group"
+        pdf.text(tx, doc.y - 20, fit(f"{_fifth(letter)} of {grade['peer_count']} graded peers {where}", INNER - 118 - 100, 11, True), 11, bold=True, color=NAVY)
+        rank_text = f"rank {rank} of {len(peers)}; " if peers else ""
+        pdf.text(tx, doc.y - 34, f"{rank_text}percentile {pct_points(grade['percentile'])}; sampling error {pct_points(sd)} points; lower is stronger", 8.5)
+        _ruler(pdf, tx, doc.y - 58, 220, grade["percentile"])
+        photo = resources.files("assay").joinpath("assets").joinpath(f"{animals.LETTERS.get(letter[0], ('', ''))[0]}-240.jpg")
+        if photo.is_file():
+            px = PAGE_W - MARGIN - 86
+            pdf.image("Portrait", photo.read_bytes(), px, doc.y - band_h + 8, 78, 54)
+            pdf.rect(px, doc.y - band_h + 8, 78, 54, stroke=NAVY)
+            pdf.text(px + 39, doc.y - band_h + 2.5 + 64, f"{letter}, the {animals.LETTERS.get(letter[0], ('', ''))[1].lower()}", 7, bold=True, align="center", color=NAVY)
+    else:
+        pdf.text(MARGIN + 14, doc.y - 56, "None", 30, bold=True, color=NAVY)
+        pdf.text(MARGIN + 118, doc.y - 24, "No letter", 11, bold=True, color=NAVY)
+        pdf.text(MARGIN + 118, doc.y - 38, f"{grade.get('coverage', {}).get('resolved', 0)} of 14 inputs computable; 7 are required, with a score in every sleeve", 8.5)
+    doc.y -= band_h + 14
+
+    # ---- two columns: facts on the left, charts on the right
+    left_w, gap_w = 240.0, 16.0
+    right_w = INNER - left_w - gap_w
+    rows: list[tuple[str, str, str | None, float | None]] = []
+    if graded:
         for key, label in SLEEVES:
             value = (grade.get("sleeve_scores") or {}).get(key)
-            rows.append((label, grade_label(value, sd or 0) if value is not None else "n/a", f"percentile {pct_points(value)}", ("bar", value)))
-    else:
-        rows.append(("Grade", "None", f"{grade.get('coverage', {}).get('resolved', 0)} of 14 inputs computable; 7 are required", None))
+            rows.append((label, grade_label(value, sd or 0) if value is not None else "n/a", f"percentile {pct_points(value)}" if value is not None else None, value))
     if rel:
         rows.append(("Reliability", f"{rel['auc']:.2f} AUC", f"filers with {stratum.get('label') or ''}; 95% interval {rel['ci'][0]:.2f} to {rel['ci'][1]:.2f}; {rel['test_events']} events, 2020 to 2025", None))
         rows.append(("Peer failure rate", f"{rel['base_rate_annual'] * 100:.2f}% a year", "Item 1.03 bankruptcies, same asset band, 2012 to 2025", None))
@@ -469,7 +553,8 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
     universe = condition.get("standard_universe") or {}
     if universe.get("inside") is not None:
         rows.append(("Standard universe", "inside" if universe["inside"] else "outside", "revenue above $1M and assets above $10M", None))
-    warn = ", ".join(FLAG_LABELS.get(f["name"], f["name"]).lower() for f in active if f["name"] != "fortress") or "none active"
+    triggered = [FLAG_LABELS.get(f["name"], f["name"]).lower() for f in active if f["name"] != "fortress"]
+    warn = ", ".join(triggered) or "none triggered"
     if any(f["name"] == "fortress" for f in active):
         warn += "; fortress balance sheet"
     unresolved = [FLAG_LABELS.get(f["name"], f["name"]).lower() for f in flags if f.get("status") == "unresolved"]
@@ -477,79 +562,28 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
     rows.append(("Inputs computable", f"{grade.get('coverage', {}).get('resolved', 0)} of 14", None, None))
     rows.append(("Graded from", f"filings received through {long_date(latest_filed)}", f"{(condition.get('data_age') or {}).get('days')} days before the rescan; latest periodic filing {gap.get('last_form') or ''} received {long_date(gap.get('last_filing_date'))}", None))
     if snapshot.get("price") is not None:
-        rows.append(("Last close", f"${snapshot['price']:,.2f}", f"{str(snapshot.get('price_timestamp') or '')[:10]}; market equity {_money(live.get('market_equity') or 0)}", None))
-    rows.append(("Price used in grade", "None", None, None))
-
-    # measure
-    heights = []
-    for label, value, sub, extra in rows:
-        if extra == "grade":
-            heights.append(62)
-        elif sub:
-            heights.append(14 + 10 * len(wrap(sub, left_w - 112, 7.5)))
-        else:
-            heights.append(17)
-    header_h = 26
-    panel_h = header_h + sum(heights) + 2
-    doc.need(panel_h + 4)
-    panel_top = doc.y
-    x0 = MARGIN
-    pdf.rect(x0, panel_top - panel_h, INNER, panel_h, stroke=NAVY, width=0.8)
-    pdf.rect(x0, panel_top - header_h, INNER, header_h, fill=SHADE, stroke=NAVY, width=0.8)
-    pdf.text(x0 + 6, panel_top - 11, name, 10, bold=True, color=NAVY)
-    pdf.text(x0 + 6, panel_top - 21, f"{ticker}; {sector_label}", 8, color=NAVY)
-    pdf.line(x0 + left_w, panel_top - header_h, x0 + left_w, panel_top - panel_h, 0.8)
-    y = panel_top - header_h
-    for (label, value, sub, extra), h in zip(rows, heights):
-        pdf.line(x0, y, x0 + left_w, y, 0.4, GREY)
-        pdf.text(x0 + 6, y - 12, label, 8.5, bold=True, color=NAVY)
-        vx = x0 + 104
-        if extra == "grade":
-            pdf.text(vx, y - 30, grade["grade"], 30, bold=True, color=NAVY)
-            _ruler(pdf, vx + 62, y - 26, 120, grade["percentile"])
-            pdf.text(vx, y - 44, f"{_fifth(grade['grade'])} of {grade['peer_count']} graded peers", 7.5)
-            pdf.text(vx, y - 54, f"percentile {pct_points(grade['percentile'])}; sampling error {pct_points(sd)} points; lower is stronger", 7.5)
-        elif isinstance(extra, tuple) and extra[0] == "bar":
-            pdf.text(vx, y - 12, value, 9)
-            _bar(pdf, vx + 30, y - 9, 90, extra[1])
-            pdf.text(vx + 128, y - 12, sub or "", 7.5)
-        else:
-            pdf.text(vx, y - 12, value, 9)
-            if sub:
-                for i, line in enumerate(wrap(sub, left_w - 112, 7.5)):
-                    pdf.text(vx, y - 22 - 10 * i, line, 7.5)
-        y -= h
-    # right column: portrait and chart
-    rx = x0 + left_w + 8
-    ry = panel_top - header_h - 8
-    rw = right_w - 16
-    if graded:
-        photo = resources.files("assay").joinpath("assets").joinpath(f"{animals.LETTERS.get(grade['grade'][0], ('', ''))[0]}-240.jpg")
-        if photo.is_file():
-            pdf.image("Portrait", photo.read_bytes(), rx, ry - 68, 92, 68)
-            pdf.rect(rx, ry - 68, 92, 68, stroke=NAVY)
-            animal_label = animals.LETTERS.get(grade["grade"][0], ("", ""))[1]
-            pdf.text(rx + 100, ry - 14, f"{grade['grade']}, the {animal_label.lower()}", 9, bold=True, color=NAVY)
-            for i, line in enumerate(wrap(f"{_fifth(grade['grade'])} of its sector; letters are fifths of the {grade['peer_count']} graded peers", rw - 104, 7.5)):
-                pdf.text(rx + 100, ry - 26 - 10 * i, line, 7.5)
-        ry -= 80
+        rows.append(("Last close", f"${snapshot['price']:,.2f}", f"{str(snapshot.get('price_timestamp') or '')[:10]}; market equity {_money(live.get('market_equity') or 0)}; no price enters the letter", None))
+    left_h = sum(15 + 9.5 * len(wrap(sub, left_w - 98, 7.5)) if sub else 15 for _, _, sub, _ in rows) + 2
+    chart_h = 150.0
+    right_h = (chart_h + 34 if prices and len(prices) >= 20 else 0) + (96 + 30 if len(rescans) >= 3 else 0)
+    doc.need(max(left_h, right_h) + 10)
+    top = doc.y
+    pdf.text(MARGIN + 2, top + 2, "Scoreboard", 8, bold=True, color=NAVY)
+    doc.y = top - 4
+    doc.kv(MARGIN, left_w, rows)
+    rx = MARGIN + left_w + gap_w
+    ry = top
     if prices and len(prices) >= 20:
-        chart_h = min(150.0, ry - (panel_top - panel_h) - 30)
-        pdf.text(rx, ry - 9, "Share price, twelve months to the rescan", 8, bold=True, color=NAVY)
-        pdf.text(rx, ry - 19, "split-adjusted close; the letter is fixed at the rescan that set it", 6.5, italic=True)
-        _price_chart(pdf, rx, ry - 24 - chart_h, rw, chart_h, prices, history or [])
-        ry -= 30 + chart_h
-    points = [p for p in (history or []) if p.get("grade")]
-    if points and ry - 12 > panel_top - panel_h + 8:
-        pdf.text(rx, ry - 9, "Rescans on file: " + ", ".join(f"{p['grade']} from {long_date(p['date'])}" for p in points[-4:]), 6.5, italic=True)
-    doc.y = panel_top - panel_h - 12
-
-    # ---- every rescan on file
-    if rescans and len(rescans) >= 3:
-        doc.heading("Letter at every rescan", f"{long_date(rescans[0][0])} to {long_date(rescans[-1][0])}; sector percentile, stronger toward the top; facts filed by each date only")
-        doc.need(90)
-        _rescan_chart(pdf, MARGIN, doc.y - 84, INNER, 80, rescans)
-        doc.y -= 92
+        pdf.text(rx + 2, ry + 2, "Share price, twelve months to the rescan", 8, bold=True, color=NAVY)
+        _price_chart(pdf, rx, ry - 4 - chart_h, right_w, chart_h, prices, rescans)
+        pdf.text(rx + 2, ry - chart_h - 14, "Split-adjusted close. Each lollipop is a rescan and carries the letter held then.", 6.5, italic=True, color=grey)
+        ry -= chart_h + 34
+    if len(rescans) >= 3:
+        pdf.text(rx + 2, ry + 2, f"Letter at every rescan, {rescans[0][0][:4]} to {rescans[-1][0][:4]}", 8, bold=True, color=NAVY)
+        _rescan_chart(pdf, rx, ry - 4 - 96, right_w, 96, rescans)
+        pdf.text(rx + 2, ry - 96 - 14, "Sector percentile at each rescan, stronger toward the top; facts filed by each date only.", 6.5, italic=True, color=grey)
+        ry -= 96 + 30
+    doc.y = top - max(left_h, right_h) - 10
 
     # ---- description
     if description and description.get("text"):
@@ -557,7 +591,7 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
         doc.paragraph(description["text"], 9.5)
 
     # ---- inputs
-    doc.heading("The fourteen inputs", "lower percentile is stronger; equal-weighted sleeves")
+    doc.heading("The fourteen inputs", "lower percentile is stronger; sleeves and inputs within a sleeve carry equal weight")
     percentiles = grade.get("factor_percentiles") or {}
     factors = {f["name"]: f for f in report["factors"]}
     rows_t: list[Any] = []
@@ -574,35 +608,38 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
                 pval = pc.get("percentile")
 
                 def draw(p: Pdf, x: float, yy: float, cols: list, pval=pval) -> None:
-                    _bar(p, x + cols[0][1] + 4, yy + 3, cols[1][1] - 8, pval)
+                    _bar(p, x + cols[0][1] + cols[1][1] + cols[2][1] + 6, yy + 3, cols[3][1] - 12, pval)
 
-                rows_t.append(([flabel, "", fmt(factor["value"], kind), median, pct_points(pval), pc.get("peer_count") or "", factor.get("period_end") or ""], draw))
+                rows_t.append(([flabel, fmt(factor["value"], kind), median, "", pct_points(pval), pc.get("peer_count") or "", factor.get("period_end") or ""], draw))
             else:
-                rows_t.append([flabel, "", "not computable", median, "", "", (factor.get("detail") or factor.get("reason") or "")])
-    doc.table([("Input", 156, "left"), ("Percentile, 0 to 100", 84, "left"), ("Value", 62, "right"), ("Peer median", 66, "right"), ("Percentile", 50, "right"), ("Peers", 40, "right"), ("Period end", 54, "wrap")], rows_t, 8)
+                rows_t.append([flabel, "not computable", median, "", "", "", ""])
+                reason = factor.get("detail") or factor.get("reason") or ""
+                if reason:
+                    rows_t.append(("note", reason))
+    doc.table([("Input", 150, "left"), ("Value", 64, "right"), ("Peer median", 64, "right"), ("Percentile, 0 to 100", 110, "left"), ("Pct", 40, "right"), ("Peers", 36, "right"), ("Period end", 48, "left")], rows_t, 8)
 
     # ---- warnings: only the checks that triggered
-    triggered = [f for f in flags if f.get("active")]
-    if triggered:
-        doc.heading("Warnings", f"{len(triggered)} of {len(flags)} checks triggered; none of them enters the letter")
-        doc.table([("Check", 110, "left"), ("Measured", 402, "wrap")], [[FLAG_LABELS.get(f["name"], f["name"]), f.get("detail") or ""] for f in triggered], 8)
+    if active:
+        doc.heading("Warnings", f"{len(active)} of {len(flags)} checks triggered; none of them enters the letter")
+        doc.table([("Check", 110, "left"), ("Measured", 402, "wrap")], [[FLAG_LABELS.get(f["name"], f["name"]), f.get("detail") or ""] for f in active], 8)
 
     # ---- peers
     if peers and graded:
         doc.heading(f"Among {len(peers)} peers", f"{sector_label}; letters are fifths of this list")
         scored = [p["composite"] for p in peers if isinstance(p.get("composite"), (int, float))]
         if len(scored) >= 10:
-            doc.need(120)
-            _density(pdf, MARGIN, doc.y - 108, INNER, 104, scored, grade.get("composite"), f"{ticker} {pct_points(grade['percentile'])}")
+            doc.need(124)
+            _density(pdf, MARGIN, doc.y - 108, INNER, 104, scored, grade.get("composite"), f"{ticker}, percentile {pct_points(grade['percentile'])}")
             doc.y -= 116
-            doc.paragraph("Composite score of every graded peer, smoothed; vertical rules are the letter band edges; stronger to the left.", 7.5, italic=True)
+            doc.paragraph("Composite score of every graded peer, smoothed; vertical rules are the letter band edges; stronger to the left.", 7.5, italic=True, color=grey)
         ordered = sorted(peers, key=lambda p: p.get("percentile") or 0)
         pos = next((i for i, p in enumerate(ordered) if p["ticker"] == ticker), None)
         if pos is not None:
-            window = ordered[max(0, pos - 5): pos + 6]
-            doc.table([("Rank", 40, "right"), ("Company", 300, "wrap"), ("Percentile", 70, "right"), ("Letter", 50, "right"), ("Warnings", 52, "wrap")], [
-                [ordered.index(p) + 1, f"{_company_name(p.get('name') or '')} ({p['ticker']})" + (" <" if p["ticker"] == ticker else ""), pct_points(p.get("percentile")), p.get("grade") or "", ", ".join(FLAG_LABELS.get(f, f).lower() for f in (p.get("active_flags") or []))]
-                for p in window], 8)
+            start_i = max(0, pos - 5)
+            window = ordered[start_i: pos + 6]
+            doc.table([("Rank", 34, "right"), ("Company", 244, "fit"), ("Percentile", 64, "right"), ("Letter", 42, "right"), ("Warnings", 128, "wrap")], [
+                [start_i + i + 1, f"{_company_name(p.get('name') or '')} ({p['ticker']})", pct_points(p.get("percentile")), p.get("grade") or "", ", ".join(FLAG_LABELS.get(f, f).lower() for f in (p.get("active_flags") or []))]
+                for i, p in enumerate(window)], 8, highlight={pos - start_i})
 
     # ---- price measures
     metrics = {m["name"]: m for m in (report.get("implied_expectations") or {}).get("metrics", [])}
@@ -616,14 +653,14 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
         share = (sum(1 for v in peer_values if v < value) / len(peer_values) * 100) if (peer_values and value is not None) else None
         rows_p.append([mlabel, fmt(value, kind) if value is not None else "not computable", fmt(statistics.median(peer_values), kind) if peer_values else "n/a", f"{share:.0f}" if share is not None else ""])
     if rows_p:
-        doc.heading("What the price implies", f"at the {str(snapshot.get('price_timestamp') or as_of)[:10]} close; none enters the grade")
+        doc.heading("What the price implies", f"at the {str(snapshot.get('price_timestamp') or as_of)[:10]} close; none of these enters the grade")
         doc.table([("Measure", 262, "left"), ("Value", 80, "right"), ("Peer median", 90, "right"), ("Percentile", 80, "right")], rows_p, 8)
 
     # ---- diagnostics
     piot = diagnostics.get("piotroski_f_score") or {}
     runway = diagnostics.get("cash_runway") or {}
     adv = diagnostics.get("median_dollar_adv") or {}
-    doc.heading("Diagnostics", "not in the grade")
+    doc.heading("Diagnostics", "shown on every report; none enters the grade")
     rows_d: list[Any] = []
     if piot.get("components"):
         rows_d.append(f"Piotroski F-score {piot.get('score')} of {piot.get('maximum') or 9}, period end {piot.get('period_end') or ''}")
@@ -647,15 +684,15 @@ def company_report(report: dict[str, Any], prices: list[list[Any]] | None = None
             if r.get("filing_url") and key not in seen:
                 seen[key] = r
     receipts = list(seen.values())
-    doc.heading("Sources", "each row links to the filing index on sec.gov")
+    doc.heading("Sources", "every fact behind the inputs; each row links to its filing index on sec.gov")
     rows_s = []
     links: dict[int, str] = {}
     for n, r in enumerate(receipts):
         value = r.get("value")
         shown = _money(value) if r.get("unit") == "USD" and isinstance(value, (int, float)) else (f"{value:,.0f}" if isinstance(value, (int, float)) else str(value))
-        rows_s.append([n + 1, str(r.get("concept") or "").replace("_", " "), f"{r.get('namespace')}:{r.get('tag')}", shown, r.get("end"), r.get("filed"), r.get("form"), r.get("accession")])
+        rows_s.append([n + 1, str(r.get("concept") or "").replace("_", " "), f"{r.get('namespace')}:{r.get('tag')}", shown, r.get("end"), r.get("filed"), r.get("form"), str(r.get("accession") or "")[-9:]])
         links[n] = r["filing_url"]
-    doc.table([("#", 20, "right"), ("Concept", 82, "left"), ("XBRL tag", 176, "wrap"), ("Value", 56, "right"), ("Period end", 50, "left"), ("Received", 50, "left"), ("Form", 30, "left"), ("Accession", 48, "wrap")], rows_s, 6.8, links=links)
+    doc.table([("#", 22, "right"), ("Concept", 92, "fit"), ("XBRL tag", 170, "fit"), ("Value", 60, "right"), ("Period end", 46, "left"), ("Received", 46, "left"), ("Form", 30, "left"), ("Accession", 46, "left")], rows_s, 6.8, links=links)
     doc.footer()
     return pdf.build()
 
@@ -668,6 +705,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prices", type=Path)
     parser.add_argument("--descriptions", type=Path)
     parser.add_argument("--history", type=Path)
+    parser.add_argument("--rescans", type=Path, help="the company's rescans CSV, as the site writes under downloads/")
     args = parser.parse_args(argv)
     ticker = args.ticker.upper()
     report = json.loads((args.data / "tickers" / f"{ticker}.json").read_text(encoding="utf-8"))
@@ -679,7 +717,12 @@ def main(argv: list[str] | None = None) -> int:
         history = ticker_history(json.loads(args.history.read_text(encoding="utf-8")), ticker)
     peers = load_peers(args.data, report["grade"].get("peer_group") or report["company"].get("sector") or "")
     medians, _ = peer_factor_medians(args.data, peers) if peers else ({}, {})
-    args.out.write_bytes(company_report(report, prices, description, history, peers, medians))
+    rescans = None
+    if args.rescans:
+        import csv
+        with open(args.rescans, newline="", encoding="utf-8") as handle:
+            rescans = [(row["as_of"], row["letter"] or None, float(row["percentile"]) if row["percentile"] else None) for row in csv.DictReader(handle)]
+    args.out.write_bytes(company_report(report, prices, description, history, peers, medians, rescans))
     print(args.out, args.out.stat().st_size, "bytes")
     return 0
 

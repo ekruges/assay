@@ -110,6 +110,10 @@ class ExportTests(unittest.TestCase):
             self.assertIn('href="/assay/index.html"', lost)
             self.assertIn("nf-ticker", lost)
             self.assertIn("Try again", error_page(state, "/assay/"))
+            from assay.site import time_machine_page
+            machine = time_machine_page(state, {"2026-09-26": {"AAA": {"sector": "healthcare", "grade": "B", "percentile": 0.3, "status": "eligible"}}})
+            self.assertIn("wayback/dates.json", machine)
+            self.assertIn("Every Page, as Published", machine)
             page = point_in_time_page(state)
             self.assertIn("history/dates.json", page)
             self.assertIn("Time machine", page)

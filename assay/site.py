@@ -871,7 +871,17 @@ def time_machine_page(state: dict[str, Any], hist: dict[str, dict[str, dict[str,
     as_of = state["index"]["as_of"]
     dates = sorted(hist)
     out = [heading("Time Machine")]
-    out.append(f"<p>{len(dates)} rescans on file, {escape(long_date(dates[0]))} to {escape(long_date(dates[-1]))}, each computed from the facts filed by that date. Pick a date to see the universe as it stood, or a ticker to see every letter it has held; every date opens the company as it was computed that day.</p>")
+    out.append("<h2>Every Page, as Published</h2>"
+               "<p>A copy of the whole site is kept from every nightly run: daily for the last 92 days, then the first run on or after the 21st of each month. "
+               "Pick a day and a page to open that page exactly as it was published, with every link staying inside that day.</p>"
+               '<p><label for="wb-date"><b>Day:</b></label> <select id="wb-date"><option value="">loading</option></select> '
+               '<label for="wb-page"><b>Page:</b></label> <input id="wb-page" value="index.html" maxlength="60" autocomplete="off" style="font-family:Times, serif; font-size:15px; width:12em; border:1px solid #000080; padding:2px 4px"> '
+               '<button id="wb-go" type="button" style="font-family:Times, serif; font-size:15px; border:1px solid #000080; background:#e8e8f0; color:#000080">Open</button> '
+               '<span id="wb-status" class="small"></span></p>'
+               '<p class="small">A ticker works as the page: INTC opens INTC.html. The front page, every screen and every company page are kept.</p>'
+               "<h2>Every Rescan on File</h2>"
+               f"<p>{len(dates)} rescans on file, {escape(long_date(dates[0]))} to {escape(long_date(dates[-1]))}, each computed from the facts filed by that date. "
+               "Pick a date to see the universe as it stood, or a ticker to see every letter it has held; every date opens the company as it was computed that day.</p>")
     out.append('<div class="cols even"><div><p><label for="tm-date"><b>Rescan:</b></label> <select id="tm-date"></select> <span id="tm-status" class="small">loading history</span></p><div id="tm-universe"></div></div>'
                '<div><p><label for="tm-ticker"><b>Ticker:</b></label> <input id="tm-ticker" placeholder="TICKER" maxlength="8" autocomplete="off" style="font-family:Times, serif; font-size:15px; width:7em; border:1px solid #000080; padding:2px 4px; text-transform:uppercase"> <button id="tm-go" type="button" style="font-family:Times, serif; font-size:15px; border:1px solid #000080; background:#e8e8f0; color:#000080">Show</button></p><div id="tm-ticker-out"></div></div></div>')
     rows = []
@@ -897,6 +907,11 @@ def time_machine_page(state: dict[str, Any], hist: dict[str, dict[str, dict[str,
     var w=440,h=110,L=24,pts=[],years='',seen={};for(var i=0;i<cube.dates.length;i++){var x=L+i/(cube.dates.length-1)*(w-L-8);if(e.percentiles[i]!==null)pts.push(x.toFixed(1)+' '+(8+e.percentiles[i]*(h-24)).toFixed(1));var y=cube.dates[i].slice(0,4);if(!seen[y]){seen[y]=1;if(i>0)years+='<text x="'+x.toFixed(1)+'" y="'+(h-4)+'" font-size="9" text-anchor="middle">'+esc(y)+'</text>';}}
     var svg='<svg class="chart" viewBox="0 0 '+w+' '+h+'">'+[0.2,0.4,0.6,0.8].map(function(q){return '<line x1="'+L+'" y1="'+(8+q*(h-24))+'" x2="'+(w-8)+'" y2="'+(8+q*(h-24))+'" stroke="#c8c8d8"/>';}).join('')+'ABCDE'.split('').map(function(g,k){return '<text x="'+(L-5)+'" y="'+(8+(k*0.2+0.1)*(h-24)+3)+'" font-size="9" font-weight="bold" text-anchor="end">'+g+'</text>';}).join('')+(pts.length>1?'<path d="M'+pts.join('L')+'" fill="none" stroke="#000080" stroke-width="1.2"/>':'')+years+'</svg>';
     tout.innerHTML='<p><b><a href="'+base+esc(t)+'.html">'+esc(e.name||t)+'</a></b> ('+esc(t)+'), '+esc((e.sector||'').replace(/_/g,' '))+'</p>'+svg+'<div class="scroll" style="max-height:22em;overflow-y:auto"><table class="data"><tr><th>Rescan</th><th class="n">Letter</th><th class="n">Percentile</th></tr>'+rows+'</table></div>';}
+  var wsel=document.getElementById('wb-date'),wpage=document.getElementById('wb-page'),wstatus=document.getElementById('wb-status');
+  fetch(base+'wayback/dates.json').then(function(r){return r.ok?r.json():[];}).then(function(ds){wsel.innerHTML='';if(!ds.length){wsel.innerHTML='<option value="">no copies yet</option>';wstatus.textContent='copies begin with the first nightly run after this feature shipped';return;}
+    ds.slice().reverse().forEach(function(d){var o=document.createElement('option');o.value=d;o.textContent=d;wsel.appendChild(o);});wstatus.textContent=ds.length+' days on file';}).catch(function(){wsel.innerHTML='<option value="">unavailable</option>';});
+  function openWayback(){var d=wsel.value,p=(wpage.value||'index.html').trim();if(!d)return;if(/^[A-Za-z0-9.\-]{1,8}$/.test(p)&&p.toUpperCase()===p&&!/\./.test(p))p=p+'.html';if(/^[A-Za-z0-9.\-]{1,8}$/.test(p)&&!/\.html$/.test(p)&&!/\./.test(p))p=p.toUpperCase()+'.html';location.href=base+'wayback/'+d+'/'+p;}
+  document.getElementById('wb-go').addEventListener('click',openWayback);wpage.addEventListener('keydown',function(ev){if(ev.key==='Enter')openWayback();});
   fetch(base+'history/cube.json').then(function(r){return r.json();}).then(function(c){cube=c;cube.dates.forEach(function(d,i){var o=document.createElement('option');o.value=i;o.textContent=d;sel.appendChild(o);});sel.value=cube.dates.length-1;status.textContent=cube.dates.length+' rescans loaded';universe(cube.dates.length-1);sel.addEventListener('change',function(){universe(parseInt(sel.value,10));});
     document.getElementById('tm-go').addEventListener('click',ticker);tin.addEventListener('keydown',function(ev){if(ev.key==='Enter')ticker();});}).catch(function(){status.textContent='history file not available';});
 })();
@@ -976,7 +991,7 @@ def point_in_time_page(state: dict[str, Any], page_link: str = "./") -> str:
       var pos=dates.indexOf(d),prev=pos>0?dates[pos-1]:null,next=pos>=0&&pos<dates.length-1?dates[pos+1]:null;var isLatest=latest===d;
       var nowRow=null;if(now&&now.tickers)for(i=0;i<now.tickers.length;i++)if(now.tickers[i].ticker===t){nowRow=now.tickers[i];break;}
       banner.hidden=false;banner.innerHTML='<b>Time machine</b>'+esc(name)+' ('+esc(t)+') as computed on <b style="font-variant:normal;letter-spacing:0">'+esc(longDate(d))+'</b>, from facts received by the SEC on or before that date. '+(isLatest?'This is the latest rescan.':'The latest rescan is '+esc(longDate(latest))+'.')
-        +'<div class="nav">'+(prev?'<a href="#'+esc(t)+'~'+esc(prev)+'">&larr; previous rescan, '+esc(longDate(prev))+'</a>':'<span>first rescan on file</span>')+(next?'<a href="#'+esc(t)+'~'+esc(next)+'">next rescan, '+esc(longDate(next))+' &rarr;</a>':'<span>latest rescan</span>')+'<a href="'+base+esc(t)+'.html">Exit to the latest report</a><a href="'+base+'time-machine.html">Time machine</a></div>';
+        +'<div class="nav">'+(prev?'<a href="#'+esc(t)+'~'+esc(prev)+'">&larr; previous rescan, '+esc(longDate(prev))+'</a>':'<span>first rescan on file</span>')+(next?'<a href="#'+esc(t)+'~'+esc(next)+'">next rescan, '+esc(longDate(next))+' &rarr;</a>':'<span>latest rescan</span>')+(snapshots.indexOf(d)>=0?'<a href="'+base+'wayback/'+esc(d)+'/'+esc(t)+'.html">This page as published that day</a>':'')+'<a href="'+base+esc(t)+'.html">Exit to the latest report</a><a href="'+base+'time-machine.html">Time machine</a></div>';
       var h='<h2>'+esc(name)+' ('+esc(t)+') as of '+esc(longDate(d))+'</h2>';
       h+='<table class="score"><tr><th colspan="2">'+esc(name)+'<span class="sub">'+esc(t)+' &middot; '+esc(sectorLabel)+' &middot; rescan of '+esc(longDate(d))+'</span></th></tr>';
       h+='<tr><td class="k">Grade</td><td><span class="lt" style="font-size:28px;font-weight:bold">'+esc(row.grade||'none')+'</span> '+ruler(row.percentile)+'<div class="small">'+esc(fifth(row.grade,n,sectorLabel))+(row.percentile==null?'':'; percentile '+pct(row.percentile))+(row.sampling_standard_deviation==null?'':'; sampling error '+(row.sampling_standard_deviation*100).toFixed(1)+' points')+'</div></td></tr>';
@@ -1021,6 +1036,7 @@ def point_in_time_page(state: dict[str, Any], page_link: str = "./") -> str:
   function fromHash(){var m=/^#([A-Z0-9.\\-]+)~(\\d{4}-\\d{2}-\\d{2})$/.exec(location.hash||'');if(!m){banner.hidden=true;return;}tin.value=m[1];if(dates.indexOf(m[2])>=0)sel.value=m[2];render(m[1],m[2]);}
   function go(){var t=(tin.value||'').trim().toUpperCase(),d=sel.value;if(!t||!d)return;if(location.hash!=='#'+t+'~'+d)location.hash='#'+t+'~'+d;else render(t,d);}
   function step(k){if(!current)return;var pos=dates.indexOf(current.d)+k;if(pos<0||pos>=dates.length)return;location.hash='#'+current.t+'~'+dates[pos];}
+  var snapshots=[];fetchJson(base+'wayback/dates.json').then(function(ds){snapshots=ds||[];});
   fetchJson(base+'history/dates.json').then(function(ds){dates=ds||[];dates.forEach(function(d){var o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);});if(dates.length)sel.value=dates[dates.length-1];fromHash();});
   document.getElementById('pt-go').addEventListener('click',go);tin.addEventListener('keydown',function(ev){if(ev.key==='Enter')go();});window.addEventListener('hashchange',fromHash);
   document.addEventListener('keydown',function(ev){if(ev.target===tin||ev.target===sel)return;if(ev.key==='ArrowLeft')step(-1);if(ev.key==='ArrowRight')step(1);});

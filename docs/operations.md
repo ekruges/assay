@@ -132,6 +132,13 @@ ticker and offers the EDGAR company search for it.
 `status.json` at the site root and `runs.html` show the latest run; a run that did
 not complete is recorded with its log.
 
+Every published tree is kept under `wayback/<as_of>/` on the web host, hard-linked
+from the live tree at publish time, without `prices/`, `history/` and `img/`. The
+retention rule is the one the records use: daily for 92 days, then the first run on
+or after the 21st of each month. `wayback/dates.json` lists the days; the page
+script shows a banner with previous, next and today's version when a page is served
+from a snapshot, and the time machine page opens any page on any day.
+
 The front page features rotate: `.state/featured.jsonl` logs each day's picks, and a
 company featured within the last 14 days yields to the next candidate. The first (for
 the bear, last) in its sector may hold the spot for two runs in a row, then yields too.

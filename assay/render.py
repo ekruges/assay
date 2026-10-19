@@ -189,6 +189,10 @@ CSS = """
   .bar form { font-variant: normal; display: flex; gap: 3px; }
   .sitemap { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 12px; margin: 10px 0 8px; }
   .sitemap b { font-variant: small-caps; letter-spacing: .04em; }
+  .wayback { background: #000080; color: #ffffff; padding: 8px 12px; margin: 0 0 10px; font-size: 14px; line-height: 1.45; }
+  .wayback a { color: #ffffff; }
+  .wayback b { font-variant: small-caps; letter-spacing: .04em; margin-right: 6px; }
+  .wayback .nav { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 3px; font-size: 13px; }
   .credits summary { cursor: pointer; }
   .credits p { margin: 2px 0 0; }
   .ranges { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; margin: 0 0 4px; font-size: 12px; }
@@ -301,6 +305,14 @@ TIP_SCRIPT = """<script>
     svg.addEventListener('mousemove',function(e){if(target(e,'.lolli')||svg.getAttribute('data-dragging'))return;var ps=points();var guide=svg.querySelector('.guide');var pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;var loc=pt.matrixTransform(svg.getScreenCTM().inverse());var best=ps[0];for(var i=1;i<ps.length;i++){if(Math.abs(ps[i][0]-loc.x)<Math.abs(best[0]-loc.x))best=ps[i];}if(guide){guide.setAttribute('x1',best[0]);guide.setAttribute('x2',best[0]);guide.style.display='block';}tip.setAttribute('data-for','series');show(best[1],e);});
     svg.addEventListener('mouseleave',function(){var guide=svg.querySelector('.guide');if(guide)guide.style.display='none';hide();});
   });
+  var wb=/^(.*\/)wayback\/(\d{4}-\d{2}-\d{2})\/(.*)$/.exec(location.pathname);
+  if(wb&&window.fetch){var root=wb[1],day=wb[2],rest=wb[3]||'index.html';var page=document.querySelector('.page');
+    function esc(x){return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+    function longDate(d){var M=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return M[+d.slice(5,7)-1]+' '+(+d.slice(8,10))+', '+d.slice(0,4);}
+    var bar=document.createElement('div');bar.className='wayback';bar.innerHTML='<b>Time machine</b>This page as published on <b style="font-variant:normal;letter-spacing:0">'+esc(longDate(day))+'</b>. Every link stays inside that day.';
+    if(page)page.insertBefore(bar,page.firstChild);
+    fetch(root+'wayback/dates.json').then(function(r){return r.ok?r.json():[];}).then(function(ds){var i=ds.indexOf(day),prev=i>0?ds[i-1]:null,next=i>=0&&i<ds.length-1?ds[i+1]:null;
+      bar.innerHTML+='<div class="nav">'+(prev?'<a href="'+esc(root+'wayback/'+prev+'/'+rest)+'">&larr; '+esc(longDate(prev))+'</a>':'<span>first snapshot</span>')+(next?'<a href="'+esc(root+'wayback/'+next+'/'+rest)+'">'+esc(longDate(next))+' &rarr;</a>':'<span>latest snapshot</span>')+'<a href="'+esc(root+rest)+'">Today\'s version of this page</a><a href="'+esc(root+'time-machine.html')+'">Time machine</a></div>';}).catch(function(){});}
   var pc=document.querySelector('svg[data-prices]');
   if(pc&&window.fetch){
     var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
