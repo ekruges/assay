@@ -66,6 +66,21 @@ class RenderTests(unittest.TestCase):
         rows = len(re.findall(r'<td class="n">(\d+)</td><td>', html.split('id="sources"')[1]))
         self.assertEqual(max(numbers), rows)
 
+    def test_page_script_parses(self) -> None:
+        """The one inline script must be valid JavaScript; a bad escape breaks every page at once."""
+        import shutil
+        import subprocess
+        import tempfile
+        from assay.render import TIP_SCRIPT
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        body = TIP_SCRIPT[TIP_SCRIPT.index("<script>") + 8:TIP_SCRIPT.rindex("</script>")]
+        with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as handle:
+            handle.write(body)
+        result = subprocess.run([node, "--check", handle.name], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -18,7 +18,7 @@ as_of=$(python3 -c 'import json; print(json.load(open("data/index.json"))["as_of
 tar -C "$ASSAY_SITE_DIR" -cf - . | ssh "$ASSAY_PUBLISH_SSH" "
   rm -rf '$target.new' '$target.old' && mkdir -p '$target.new' && tar -xf - -C '$target.new' &&
   { [ -d '$target' ] && mv '$target' '$target.old'; mv '$target.new' '$target'; } &&
-  { [ -d '$target.old/wayback' ] && mv '$target.old/wayback' '$target/wayback'; mkdir -p '$target/wayback/$as_of'; } &&
+  { [ -d '$target.old/wayback' ] && mv '$target.old/wayback' '$target/wayback'; rm -rf '$target/wayback/$as_of'; mkdir -p '$target/wayback/$as_of'; } &&
   cd '$target' && for f in *; do case \"\$f\" in wayback|prices|history) ;; *) cp -al \"\$f\" 'wayback/$as_of/' ;; esac; done && rm -rf '$target.old'"
 status=$?
 if [ "$status" -eq 0 ]; then

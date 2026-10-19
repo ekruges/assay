@@ -312,7 +312,7 @@ TIP_SCRIPT = """<script>
     var bar=document.createElement('div');bar.className='wayback';bar.innerHTML='<b>Time machine</b>This page as published on <b style="font-variant:normal;letter-spacing:0">'+esc(longDate(day))+'</b>. Every link stays inside that day.';
     if(page)page.insertBefore(bar,page.firstChild);
     fetch(root+'wayback/dates.json').then(function(r){return r.ok?r.json():[];}).then(function(ds){var i=ds.indexOf(day),prev=i>0?ds[i-1]:null,next=i>=0&&i<ds.length-1?ds[i+1]:null;
-      bar.innerHTML+='<div class="nav">'+(prev?'<a href="'+esc(root+'wayback/'+prev+'/'+rest)+'">&larr; '+esc(longDate(prev))+'</a>':'<span>first snapshot</span>')+(next?'<a href="'+esc(root+'wayback/'+next+'/'+rest)+'">'+esc(longDate(next))+' &rarr;</a>':'<span>latest snapshot</span>')+'<a href="'+esc(root+rest)+'">Today\'s version of this page</a><a href="'+esc(root+'time-machine.html')+'">Time machine</a></div>';}).catch(function(){});}
+      bar.innerHTML+='<div class="nav">'+(prev?'<a href="'+esc(root+'wayback/'+prev+'/'+rest)+'">&larr; '+esc(longDate(prev))+'</a>':'<span>first snapshot</span>')+(next?'<a href="'+esc(root+'wayback/'+next+'/'+rest)+'">'+esc(longDate(next))+' &rarr;</a>':'<span>latest snapshot</span>')+'<a href="'+esc(root+rest)+'">Current version of this page</a><a href="'+esc(root+'time-machine.html')+'">Time machine</a></div>';}).catch(function(){});}
   var pc=document.querySelector('svg[data-prices]');
   if(pc&&window.fetch){
     var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
