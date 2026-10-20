@@ -89,6 +89,24 @@ class ExportTests(unittest.TestCase):
         self.assertIn("gross_profitability,Gross profitability,profitability,0.31,ratio,0.2,120,2025-12-31,resolved,https://www.sec.gov/x/1-index.html", inputs)
         self.assertEqual(rescans.splitlines()[1:], ["2026-08-21,AAA,C,0.5", "2026-09-26,AAA,B,0.3"])
 
+    def test_snapshot_backfill_replays_history_up_to_the_day(self) -> None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("backfill_snapshots", Path(__file__).resolve().parents[1] / "scripts" / "backfill_snapshots.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            history = root / "history"
+            history.mkdir()
+            for day, grade, pct in (("2026-01-21", "A", 0.1), ("2026-02-21", "B", 0.3), ("2026-03-21", "C", 0.5)):
+                (history / f"{day}.json").write_text(json.dumps({"as_of": day, "tickers": [{"ticker": "AAA", "status": "eligible", "grade": grade, "percentile": pct, "stratum": "Q3"}]}), encoding="utf-8")
+            used = module.history_through(history, "2026-02-21", root / "log.json")
+            log = json.loads((root / "log.json").read_text())
+            self.assertEqual(used, 2)
+            self.assertEqual([c[1] for c in log["tickers"]["AAA"]["changes"]], ["A", "B"])
+            self.assertEqual(module.index_subset(history, "2026-02-21", root / "hist"), 2)
+            self.assertEqual(sorted(p.name for p in (root / "hist").iterdir()), ["2026-01-21.json", "2026-02-21.json"])
+
     def test_run_records_and_pages(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
