@@ -2,13 +2,14 @@
 
     python3 scripts/backfill_snapshots.py --cache-dir .cache/sec --market-db .cache/market/market.sqlite3 \
         --state .state --work /srv/backfill --publish-ssh ezra@host --publish-dir /srv/www/assay \
-        --dates 2026-10-18 2026-10-17 ... [--parallel 2]
+        --dates 2026-10-18 2026-10-17 ... [--parallel 1]
 
 Each date runs the all-ticker pipeline with facts filed on or before that date, records the
 rescan's slim index and detail under the state folders, replays the change log up to that
 date, builds the whole site from that tree (no PDFs, no descriptions, no calendar) and
 uploads it as that day's copy. Price history and the records folder are left out of the
 copy, as the nightly publish does. A date whose copy already exists on the host is skipped.
+One date at a time, and never while the nightly runs: a pipeline run holds about 3.5GB.
 """
 
 from __future__ import annotations
@@ -67,9 +68,17 @@ def published(args: argparse.Namespace, day: str) -> bool:
     return probe.returncode == 0
 
 
+def wait_for_nightly(args: argparse.Namespace) -> None:
+    """Hold while the nightly service runs, so the two never share the container's memory."""
+    import time
+    while args.pause_for and subprocess.run(["systemctl", "is-active", "--quiet", args.pause_for]).returncode == 0:
+        time.sleep(60)
+
+
 def snapshot(day: str, args: argparse.Namespace) -> tuple[str, str]:
     if published(args, day):
         return day, "kept"
+    wait_for_nightly(args)
     work = args.work / day
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
@@ -113,7 +122,8 @@ def main() -> int:
     parser.add_argument("--publish-dir", required=True)
     parser.add_argument("--site-root", default="/assay/")
     parser.add_argument("--dates", nargs="+", required=True)
-    parser.add_argument("--parallel", type=int, default=2)
+    parser.add_argument("--parallel", type=int, default=1)
+    parser.add_argument("--pause-for", default="assay-nightly.service", help="a systemd unit to wait out before each date; empty to never wait")
     args = parser.parse_args()
     for day in args.dates:
         date.fromisoformat(day)
