@@ -888,8 +888,8 @@ def time_machine_page(state: dict[str, Any], hist: dict[str, dict[str, dict[str,
     for d in dates:
         graded = [v for v in hist[d].values() if v.get("grade")]
         counts = {g: sum(1 for v in graded if v["grade"][0] == g) for g in "ABCDE"}
-        rows.append(f'<tr><td class="date">{escape(long_date(d))}</td><td class="n">{len(graded):,}</td>' + "".join(f'<td class="n">{counts[g]}</td>' for g in "ABCDE") + "</tr>")
-    out.append("<h2>Every Rescan</h2>" + table(["Rescan", ">Graded", ">A", ">B", ">C", ">D", ">E"], rows, wide=False))
+        rows.append(f'<tr><td class="date"><a href="{page_link}wayback/{escape(d)}/index.html">{escape(long_date(d))}</a></td><td class="n">{len(graded):,}</td>' + "".join(f'<td class="n">{counts[g]}</td>' for g in "ABCDE") + "</tr>")
+    out.append("<h2>Every Rescan</h2><p class=\"small\">Each date opens the site as published that day.</p>" + table(["Rescan", ">Graded", ">A", ">B", ">C", ">D", ">E"], rows, wide=False))
     script = """<script>
 (function(){
   var sel=document.getElementById('tm-date'),status=document.getElementById('tm-status'),uni=document.getElementById('tm-universe'),tin=document.getElementById('tm-ticker'),tout=document.getElementById('tm-ticker-out');
@@ -926,13 +926,12 @@ def point_in_time_page(state: dict[str, Any], page_link: str = "./") -> str:
     that date. Reads history/index/<date>.json, history/detail/<date>.json and downloads/<ticker>-rescans.csv in the
     browser; the hash is TICKER~DATE."""
     as_of = state["index"]["as_of"]
-    out = ['<style>.tm{background:#000080;color:#fff;padding:9px 12px;margin:0 0 12px;font-size:14px;line-height:1.45}.tm a{color:#fff}.tm b{font-variant:small-caps;letter-spacing:.04em;margin-right:6px}'
-           '.tm .nav{display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:3px;font-size:13px}svg.timeline a circle:hover{r:4}</style>']
-    out.append('<div id="pt-banner" class="tm" hidden></div>')
+    out = ['<style>svg.timeline a circle:hover{r:4}</style>', '<div id="pt-banner" class="wayback" hidden></div>']
     out.append(heading("Point in Time"))
     out.append(f"<p>Any graded company as it was computed on any rescan on file, from the facts received by the SEC on or before that date. "
                f"Rescans are kept daily for the last {export.RETENTION_DAYS} days and monthly before that, on or after the 21st. "
-               f"Open a date from a company page or the time machine, or pick one here. Arrow keys step between rescans.</p>")
+               "Where a copy of the site exists for that day, the company's page opens as it was published then; otherwise this reader shows the record. "
+               "Open a date from a company page or the time machine, or pick one here. Arrow keys step between rescans.</p>")
     out.append('<p><label for="pt-ticker"><b>Ticker:</b></label> <input id="pt-ticker" placeholder="TICKER" maxlength="8" autocomplete="off" style="font-family:Times, serif; font-size:15px; width:7em; border:1px solid #000080; padding:2px 4px; text-transform:uppercase"> '
                '<label for="pt-date"><b>Rescan:</b></label> <select id="pt-date"></select> '
                '<button id="pt-go" type="button" style="font-family:Times, serif; font-size:15px; border:1px solid #000080; background:#e8e8f0; color:#000080">Show</button> <span id="pt-status" class="small"></span></p><div id="pt-out"></div>')
@@ -1033,11 +1032,12 @@ def point_in_time_page(state: dict[str, Any], page_link: str = "./") -> str:
       h+='<li><a href="'+base+'tickers/'+esc(t)+'.json">Artifact JSON, latest rescan</a><span class="small">every input, receipt and diagnostic as last computed</span></li>';
       h+='<li><a href="#print" onclick="window.print();return false">Print this view</a><span class="small">the browser\\'s print dialog</span></li></ul></td></tr></table>';
       out.innerHTML=h;status.textContent='';window.scrollTo(0,0);});}
-  function fromHash(){var m=/^#([A-Z0-9.\\-]+)~(\\d{4}-\\d{2}-\\d{2})$/.exec(location.hash||'');if(!m){banner.hidden=true;return;}tin.value=m[1];if(dates.indexOf(m[2])>=0)sel.value=m[2];render(m[1],m[2]);}
+  function fromHash(){var m=/^#([A-Z0-9.\\-]+)~(\\d{4}-\\d{2}-\\d{2})$/.exec(location.hash||'');if(!m){banner.hidden=true;return;}tin.value=m[1];if(dates.indexOf(m[2])>=0)sel.value=m[2];
+    if(snapshots.indexOf(m[2])>=0){location.replace(base+'wayback/'+m[2]+'/'+m[1]+'.html');return;}render(m[1],m[2]);}
   function go(){var t=(tin.value||'').trim().toUpperCase(),d=sel.value;if(!t||!d)return;if(location.hash!=='#'+t+'~'+d)location.hash='#'+t+'~'+d;else render(t,d);}
   function step(k){if(!current)return;var pos=dates.indexOf(current.d)+k;if(pos<0||pos>=dates.length)return;location.hash='#'+current.t+'~'+dates[pos];}
-  var snapshots=[];fetchJson(base+'wayback/dates.json').then(function(ds){snapshots=ds||[];});
-  fetchJson(base+'history/dates.json').then(function(ds){dates=ds||[];dates.forEach(function(d){var o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);});if(dates.length)sel.value=dates[dates.length-1];fromHash();});
+  var snapshots=[];
+  Promise.all([fetchJson(base+'wayback/dates.json'),fetchJson(base+'history/dates.json')]).then(function(res){snapshots=res[0]||[];dates=res[1]||[];dates.forEach(function(d){var o=document.createElement('option');o.value=d;o.textContent=d;sel.appendChild(o);});if(dates.length)sel.value=dates[dates.length-1];fromHash();});
   document.getElementById('pt-go').addEventListener('click',go);tin.addEventListener('keydown',function(ev){if(ev.key==='Enter')go();});window.addEventListener('hashchange',fromHash);
   document.addEventListener('keydown',function(ev){if(ev.target===tin||ev.target===sel)return;if(ev.key==='ArrowLeft')step(-1);if(ev.key==='ArrowRight')step(1);});
 })();

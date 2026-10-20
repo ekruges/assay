@@ -139,6 +139,12 @@ or after the 21st of each month. `wayback/dates.json` lists the days; the page
 script shows a banner with previous, next and today's version when a page is served
 from a snapshot, and the time machine page opens any page on any day.
 
+`scripts/backfill_snapshots.py` builds the copies for past rescan dates: it runs the
+pipeline as of each date, records the rescan's slim index and detail, replays the
+change log up to that date, builds the site without PDFs, descriptions or the
+calendar, and uploads it as that day's copy. The point-in-time reader opens the copy
+of a company's page when the day has one.
+
 The front page features rotate: `.state/featured.jsonl` logs each day's picks, and a
 company featured within the last 14 days yields to the next candidate. The first (for
 the bear, last) in its sector may hold the spot for two runs in a row, then yields too.
