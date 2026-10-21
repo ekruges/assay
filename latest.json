@@ -1,12 +1,12 @@
 {
- "as_of": "2026-10-20",
+ "as_of": "2026-10-21",
  "graded": 2203,
- "rescans": 198,
+ "rescans": 199,
  "last_run": {
-  "as_of": "2026-10-20",
-  "started": "2026-10-20T07:03:40Z",
-  "finished": "2026-10-20T07:14:44Z",
-  "seconds": 664,
+  "as_of": "2026-10-21",
+  "started": "2026-10-21T07:05:03Z",
+  "finished": "2026-10-21T07:15:36Z",
+  "seconds": 633,
   "tickers": 10443,
   "eligible": 3545,
   "graded": 2203,
@@ -17,9 +17,9 @@
    "D": 453,
    "E": 403
   },
-  "letter_changes": 14,
+  "letter_changes": 10,
   "verified": true,
   "failed": false,
-  "log": "logs/2026-10-20.log"
+  "log": "logs/2026-10-21.log"
  }
 }
