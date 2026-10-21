@@ -145,6 +145,11 @@ change log up to that date, builds the site without PDFs, descriptions or the
 calendar, and uploads it as that day's copy. The point-in-time reader opens the copy
 of a company's page when the day has one.
 
+`.github/workflows/scans.yml` runs on GitHub after the nightly, fetches `status.json`
+and `index.csv` from the site, and appends them to the `scans` branch as
+`scans/<date>.json` and `scans/<date>.csv`, with a table of every scan in that
+branch's README. It computes nothing; the record of each scan simply lands on GitHub.
+
 The front page features rotate: `.state/featured.jsonl` logs each day's picks, and a
 company featured within the last 14 days yields to the next candidate. The first (for
 the bear, last) in its sector may hold the spot for two runs in a row, then yields too.

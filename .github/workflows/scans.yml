@@ -1,0 +1,67 @@
+name: Record the nightly scan
+
+on:
+  schedule:
+    - cron: "45 8 * * *"
+    - cron: "45 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: assay-scans
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Fetch the latest scan from the site
+        run: |
+          mkdir -p incoming
+          curl -fsSL -o incoming/status.json https://ezrakruger.cc/assay/status.json
+          curl -fsSL -o incoming/index.csv https://ezrakruger.cc/assay/index.csv
+          python3 -c 'import json; s=json.load(open("incoming/status.json")); print(s["as_of"])' > incoming/as_of
+
+      - name: Append it to the scans branch
+        run: |
+          as_of=$(cat incoming/as_of)
+          git config user.name "assay nightly"
+          git config user.email "assay-nightly@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin scans >/dev/null 2>&1; then
+            git fetch origin scans
+            git checkout scans
+          else
+            git checkout --orphan scans
+            git rm -rfq . || true
+          fi
+          mkdir -p scans
+          cp incoming/status.json "scans/$as_of.json"
+          cp incoming/index.csv "scans/$as_of.csv"
+          cp incoming/status.json latest.json
+          python3 - <<'PY'
+          import csv, json, pathlib
+          rows = []
+          for path in sorted(pathlib.Path("scans").glob("*.json"), reverse=True):
+              s = json.load(open(path))
+              run = s.get("last_run") or {}
+              letters = run.get("letters") or {}
+              rows.append((path.stem, s.get("graded"), letters, run.get("letter_changes"), run.get("verified"), run.get("seconds")))
+          lines = ["# assay scans", "", "One record per nightly scan, fetched from https://ezrakruger.cc/assay/ after each run: the universe with every letter and percentile (`scans/<date>.csv`) and the run record (`scans/<date>.json`).", "",
+                   "| Scan | Graded | A | B | C | D | E | Letters changed | Verified | Minutes |", "|---|---:|---:|---:|---:|---:|---:|---:|---|---:|"]
+          for day, graded, letters, changed, verified, seconds in rows:
+              lines.append(f"| {day} | {graded or ''} | {letters.get('A', '')} | {letters.get('B', '')} | {letters.get('C', '')} | {letters.get('D', '')} | {letters.get('E', '')} | {'' if changed is None else changed} | {'yes' if verified else 'no'} | {'' if seconds is None else round(seconds / 60)} |")
+          pathlib.Path("README.md").write_text("\n".join(lines) + "\n")
+          PY
+          rm -rf incoming
+          git add -A
+          if git diff --cached --quiet; then
+            echo "scan $as_of already recorded"
+          else
+            graded=$(python3 -c 'import json; print(json.load(open("latest.json"))["graded"])')
+            git commit -q -m "Scan $as_of: $graded graded"
+            git push origin scans
+          fi
