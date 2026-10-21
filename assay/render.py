@@ -960,7 +960,7 @@ def render(
                 reading = f"ahead of {share_below * 100:.0f} of 100 peers"
             else:
                 reading = f"pricier than {100 - share_below * 100:.0f} of 100 peers"
-        out.append(f'<tr><td class="w">{escape(mlabel)}</td><td class="n">{fmt(value, kind)}</td><td class="n">{fmt(statistics.median(peer_values), kind) if peer_values else "n/a"}</td><td class="n">{share_below * 100:.0f}</td><td class="w">{escape(reading)}</td></tr>')
+        out.append(f'<tr><td class="w">{escape(mlabel)}</td><td class="n">{fmt(value, kind)}</td><td class="n">{fmt(statistics.median(peer_values), kind) if peer_values else "n/a"}</td><td class="n">{f"{share_below * 100:.0f}" if share_below is not None else ""}</td><td class="w">{escape(reading)}</td></tr>')
     out.append("</table></div>")
     inputs = (report.get("implied_expectations") or {}).get("live_inputs") or {}
     if inputs:
