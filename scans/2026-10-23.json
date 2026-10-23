@@ -1,0 +1,25 @@
+{
+ "as_of": "2026-10-23",
+ "graded": 2202,
+ "rescans": 201,
+ "last_run": {
+  "as_of": "2026-10-23",
+  "started": "2026-10-23T07:00:24Z",
+  "finished": "2026-10-23T07:10:19Z",
+  "seconds": 595,
+  "tickers": 10443,
+  "eligible": 3545,
+  "graded": 2202,
+  "letters": {
+   "A": 482,
+   "B": 431,
+   "C": 434,
+   "D": 452,
+   "E": 403
+  },
+  "letter_changes": 28,
+  "verified": true,
+  "failed": false,
+  "log": "logs/2026-10-23.log"
+ }
+}

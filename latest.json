@@ -1,25 +1,25 @@
 {
- "as_of": "2026-10-22",
- "graded": 2199,
- "rescans": 200,
+ "as_of": "2026-10-23",
+ "graded": 2202,
+ "rescans": 201,
  "last_run": {
-  "as_of": "2026-10-22",
-  "started": "2026-10-22T07:01:03Z",
-  "finished": "2026-10-22T07:10:49Z",
-  "seconds": 586,
-  "tickers": 10428,
-  "eligible": 3532,
-  "graded": 2199,
+  "as_of": "2026-10-23",
+  "started": "2026-10-23T07:00:24Z",
+  "finished": "2026-10-23T07:10:19Z",
+  "seconds": 595,
+  "tickers": 10443,
+  "eligible": 3545,
+  "graded": 2202,
   "letters": {
-   "A": 480,
-   "B": 432,
-   "C": 433,
+   "A": 482,
+   "B": 431,
+   "C": 434,
    "D": 452,
-   "E": 402
+   "E": 403
   },
-  "letter_changes": 33,
+  "letter_changes": 28,
   "verified": true,
   "failed": false,
-  "log": "logs/2026-10-22.log"
+  "log": "logs/2026-10-23.log"
  }
 }
