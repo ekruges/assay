@@ -4,6 +4,7 @@ One record per nightly scan, fetched from https://ezrakruger.cc/assay/ after eac
 
 | Scan | Graded | A | B | C | D | E | Letters changed | Verified | Minutes |
 |---|---:|---:|---:|---:|---:|---:|---:|---|---:|
+| 2026-10-27 | 2198 | 482 | 429 | 433 | 453 | 401 | 58 | yes | 11 |
 | 2026-10-26 | 2198 | 482 | 429 | 432 | 453 | 402 | 0 | yes | 11 |
 | 2026-10-25 | 2198 | 482 | 429 | 432 | 453 | 402 | 11 | yes | 10 |
 | 2026-10-24 | 2198 | 482 | 429 | 432 | 453 | 402 | 33 | yes | 10 |
